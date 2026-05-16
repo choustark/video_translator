@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Project runtime
+models/*
+!models/.gitkeep
+!models/asr/
+!models/asr/.gitkeep
+!models/tts/
+!models/tts/.gitkeep
+output/*
+!output/.gitkeep
+!output/.temp/
+!output/.temp/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# BMad
+_bmad/
+_bmad-output/
+
+# Claude
+.claude/
+# Codex
+.agents/

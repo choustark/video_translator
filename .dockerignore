@@ -1,0 +1,44 @@
+# Runtime large directories
+models/
+output/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Git
+.git/
+.gitignore
+
+# BMad framework
+_bmad/
+_bmad-output/
+
+# Claude Code
+.claude/
+.agents/
+
+# Environment / secrets
+.env
+.env.local
+.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Docker
+Dockerfile
+.dockerignore

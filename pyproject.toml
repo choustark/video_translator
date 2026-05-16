@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "video-translator"
+version = "0.1.0"
+description = "Apple Silicon 英文视频翻译为中文配音的桌面工具"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "pydantic>=2.0",
+    "PyYAML>=6.0",
+    "tenacity>=8.2",
+    "pydub>=0.25",
+    "psutil>=7.0",
+    "mlx-whisper>=0.4",
+    "edge-tts>=7.0",
+]
+
+[project.optional-dependencies]
+docker = [
+    "faster-whisper>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio",
+    "ruff",
+    "mypy>=2.0",
+    "types-pyyaml>=6.0.12.20260510",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

@@ -55,7 +55,7 @@ class TestTranslateButton:
     ) -> None:
         main_window._translate_btn.setText("翻译中...")
         main_window._translate_btn.setEnabled(False)
-        main_window._on_translate_done()
+        main_window._on_pipeline_finished()
         assert main_window._translate_btn.text() == "开始翻译"
         assert main_window._translate_btn.isEnabled() is False
 
@@ -67,7 +67,7 @@ class TestTranslateButton:
         main_window._on_video_loaded(Path("/test/video.mp4"))
         main_window._translate_btn.setText("翻译中...")
         main_window._translate_btn.setEnabled(False)
-        main_window._on_translate_done()
+        main_window._on_pipeline_finished()
         assert main_window._translate_btn.isEnabled() is True
 
 

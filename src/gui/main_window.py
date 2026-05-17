@@ -34,6 +34,8 @@ from src.gui.constants import (
     WINDOW_MIN_WIDTH,
 )
 from src.gui.video_drop_area import VideoDropArea
+from src.pipeline import Pipeline
+from src.signals import PipelineSignals
 from src.validators import validate_all
 
 logger = logging.getLogger("video_translator")
@@ -51,6 +53,8 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("video_translator", "MainWindow")
         self._translating = False
         self._validation_passed = False
+        self._pipeline: Pipeline | None = None
+        self._signals = PipelineSignals()
 
         self._setup_ui()
         self._load_qss()
@@ -137,6 +141,8 @@ class MainWindow(QMainWindow):
             self._on_left_speed_changed
         )
         self._config_panel.validation_changed.connect(self._on_validation_changed)
+        self._signals.pipeline_finished.connect(self._on_pipeline_finished)
+        self._signals.stage_failed.connect(self._on_stage_failed)
 
     def _on_video_loaded(self, path: Path) -> None:
         if not isinstance(path, Path):
@@ -165,14 +171,30 @@ class MainWindow(QMainWindow):
         self._translating = True
         self._translate_btn.setText("翻译中...")
         self._translate_btn.setEnabled(False)
-        # TODO: Epic 4 替换为真正管线调用
-        QTimer.singleShot(2000, self._on_translate_done)
+        self._config_panel.setEnabled(False)
 
-    def _on_translate_done(self) -> None:
+        self._pipeline = Pipeline(config, self._signals)
+        try:
+            self._pipeline.start(video_path, _OUTPUT_DIR)
+        except RuntimeError:
+            self._on_pipeline_finished()
+
+    def _on_pipeline_finished(self) -> None:
+        """管线完成后恢复 UI 状态。"""
         self._translating = False
         self._translate_btn.setText("开始翻译")
+        self._config_panel.setEnabled(True)
         has_video = self._video_drop_area.video_path is not None
         self._translate_btn.setEnabled(has_video and self._validation_passed)
+        self._pipeline = None
+
+    def _on_stage_failed(self, stage: str, error: str) -> None:
+        """管线阶段失败时显示错误弹窗。"""
+        QMessageBox.critical(
+            self,
+            f"翻译失败 — {stage}",
+            f"阶段「{stage}」失败：\n\n{error}",
+        )
 
     def _on_validation_changed(self, is_valid: bool) -> None:
         """校验状态变化时更新按钮启用条件。"""

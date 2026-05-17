@@ -2,8 +2,9 @@ import re
 from pathlib import Path
 from typing import Literal, cast
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -30,14 +32,21 @@ from src.config import (
 )
 from src.exceptions import ConfigError
 from src.gui.constants import (
-    COLOR_PRIMARY_TEXT,
-    COLOR_SECONDARY_BG,
-    FONT_SECTION_TITLE,
+    COLOR_SUCCESS,
+    COLOR_WARNING,
+    SPACING_CONTENT_MARGIN,
     SPACING_FORM_ITEM,
-    SPACING_SECTION,
-    SPACING_WIDGET,
+    SPACING_MD,
+    SPACING_SECTION_TITLE_BOTTOM,
+    SPACING_SECTION_TITLE_TOP,
+    SPACING_XS,
 )
 from src.scheme_manager import SchemeManager
+from src.validators import (
+    ValidationError,
+    validate_all,
+    validate_config_only,
+)
 
 _PRESET_DISPLAY: dict[str, str] = {
     "high_quality": "高质量",
@@ -61,6 +70,8 @@ _SCHEMES_DIR = Path.home() / ".video_translator" / "schemes"
 
 
 class ConfigPanel(QWidget):
+    validation_changed = Signal(bool)
+
     @staticmethod
     def _make_form() -> QFormLayout:
         form = QFormLayout()
@@ -73,95 +84,133 @@ class ConfigPanel(QWidget):
         super().__init__(parent)
         self._config_path = config_path
         self._scheme_mgr = SchemeManager(_SCHEMES_DIR)
+        self._video_path: Path | None = None
+
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
         self._save_timer.timeout.connect(self._do_save)
+
+        # 校验防抖 timer（独立于保存 timer，300ms debounce）
+        self._validation_timer = QTimer(self)
+        self._validation_timer.setSingleShot(True)
+        self._validation_timer.setInterval(300)
+        self._validation_timer.timeout.connect(self._do_validation)
+
+        # 校验状态图标
+        self._asr_status_icon = self._create_status_icon()
+        self._translation_status_icon = self._create_status_icon()
+        self._tts_status_icon = self._create_status_icon()
 
         self._setup_ui()
         self._connect_signals()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACING_SECTION)
+        layout.setContentsMargins(
+            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
+        )
+        layout.setSpacing(0)
 
-        # 预设方案
         preset_form = self._make_form()
 
         self._preset_combo = QComboBox()
         for key in _PRESET_DISPLAY:
             self._preset_combo.addItem(_PRESET_DISPLAY[key], key)
-        preset_form.addRow("预设方案", self._preset_combo)
+        preset_form.addRow(self._field_label("预设方案"), self._preset_combo)
         layout.addLayout(preset_form)
 
-        # 已保存方案
+        layout.addSpacing(SPACING_MD)
+
         scheme_form = self._make_form()
         self._scheme_combo = QComboBox()
         self._scheme_combo.addItem("（无）", "")
-        scheme_form.addRow("已保存方案", self._scheme_combo)
+        scheme_form.addRow(self._field_label("已保存方案"), self._scheme_combo)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(SPACING_WIDGET)
+        btn_row.setSpacing(SPACING_XS)
         self._btn_save_scheme = QPushButton("保存")
         self._btn_delete_scheme = QPushButton("删除")
         self._btn_import_scheme = QPushButton("导入")
         self._btn_export_scheme = QPushButton("导出")
         for btn in (self._btn_save_scheme, self._btn_delete_scheme,
                     self._btn_import_scheme, self._btn_export_scheme):
+            btn.setObjectName("inlineButton")
             btn_row.addWidget(btn)
         scheme_form.addRow("", btn_row)
         layout.addLayout(scheme_form)
 
-        # ASR 配置区块
+        layout.addSpacing(SPACING_SECTION_TITLE_TOP)
+        layout.addWidget(self._section_divider())
+        layout.addSpacing(SPACING_SECTION_TITLE_BOTTOM)
+
         layout.addWidget(self._section_title("ASR 语音识别"))
+        layout.addSpacing(SPACING_XS)
         asr_form = self._make_form()
 
         self._asr_path_input = QLineEdit()
         self._asr_path_input.setReadOnly(True)
         self._asr_path_input.setPlaceholderText("选择模型目录...")
         asr_path_btn = QPushButton("浏览...")
+        asr_path_btn.setObjectName("inlineButton")
         asr_path_row = QHBoxLayout()
+        asr_path_row.setSpacing(SPACING_XS)
         asr_path_row.addWidget(self._asr_path_input)
         asr_path_row.addWidget(asr_path_btn)
+        asr_path_row.addWidget(self._asr_status_icon)
         asr_path_btn.clicked.connect(lambda: self._browse_directory(self._asr_path_input))
-        asr_form.addRow("模型路径", asr_path_row)
+        asr_form.addRow(self._field_label("模型路径"), asr_path_row)
         layout.addLayout(asr_form)
 
-        # 翻译配置区块
+        layout.addSpacing(SPACING_SECTION_TITLE_TOP)
+        layout.addWidget(self._section_divider())
+        layout.addSpacing(SPACING_SECTION_TITLE_BOTTOM)
+
         layout.addWidget(self._section_title("翻译"))
+        layout.addSpacing(SPACING_XS)
         trans_form = self._make_form()
 
         self._translation_combo = QComboBox()
         for key in _TRANSLATION_DISPLAY:
             self._translation_combo.addItem(_TRANSLATION_DISPLAY[key], key)
-        trans_form.addRow("翻译后端", self._translation_combo)
+        trans_form.addRow(self._field_label("翻译后端"), self._translation_combo)
 
         self._api_key_input = QLineEdit()
         self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._api_key_input.setPlaceholderText("输入 API Key...")
         self._api_key_toggle = QPushButton("显示")
+        self._api_key_toggle.setObjectName("inlineButton")
         self._api_key_toggle.setFixedWidth(50)
         self._api_key_toggle.clicked.connect(self._toggle_api_key_visibility)
         api_key_row = QHBoxLayout()
+        api_key_row.setSpacing(SPACING_XS)
         api_key_row.addWidget(self._api_key_input)
         api_key_row.addWidget(self._api_key_toggle)
-        trans_form.addRow("API Key", api_key_row)
+        api_key_row.addWidget(self._translation_status_icon)
+        trans_form.addRow(self._field_label("API Key"), api_key_row)
         layout.addLayout(trans_form)
 
-        # TTS 配置区块
+        layout.addSpacing(SPACING_SECTION_TITLE_TOP)
+        layout.addWidget(self._section_divider())
+        layout.addSpacing(SPACING_SECTION_TITLE_BOTTOM)
+
         layout.addWidget(self._section_title("语音合成"))
+        layout.addSpacing(SPACING_XS)
         tts_form = self._make_form()
 
         self._tts_path_input = QLineEdit()
         self._tts_path_input.setReadOnly(True)
         self._tts_path_input.setPlaceholderText("选择模型目录...")
         tts_path_btn = QPushButton("浏览...")
+        tts_path_btn.setObjectName("inlineButton")
         tts_path_row = QHBoxLayout()
+        tts_path_row.setSpacing(SPACING_XS)
         tts_path_row.addWidget(self._tts_path_input)
         tts_path_row.addWidget(tts_path_btn)
+        tts_path_row.addWidget(self._tts_status_icon)
         tts_path_btn.clicked.connect(lambda: self._browse_directory(self._tts_path_input))
-        tts_form.addRow("模型路径", tts_path_row)
+        tts_form.addRow(self._field_label("模型路径"), tts_path_row)
 
         self._speed_slider = QSlider(Qt.Orientation.Horizontal)
         self._speed_slider.setRange(5, 20)
@@ -172,20 +221,53 @@ class ConfigPanel(QWidget):
         speed_row = QHBoxLayout()
         speed_row.addWidget(self._speed_slider)
         speed_row.addWidget(self._speed_label)
-        tts_form.addRow("语速", speed_row)
+        tts_form.addRow(self._field_label("语速"), speed_row)
 
         layout.addLayout(tts_form)
+
+        layout.addSpacing(SPACING_MD)
+        self._validation_summary_label = QLabel()
+        self._validation_summary_label.setObjectName("validationSummary")
+        self._validation_summary_label.setVisible(False)  # 首次校验前隐藏
+        layout.addWidget(self._validation_summary_label)
+
         layout.addStretch()
 
     def _section_title(self, text: str) -> QLabel:
         label = QLabel(text)
-        label.setStyleSheet(
-            f"font-size: {FONT_SECTION_TITLE}pt; font-weight: bold;"
-            f" color: {COLOR_PRIMARY_TEXT};"
-            f" background-color: {COLOR_SECONDARY_BG};"
-            f" padding: {SPACING_FORM_ITEM // 2}px;"
-        )
+        label.setObjectName("sectionTitle")
         return label
+
+    def _field_label(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("fieldLabel")
+        return label
+
+    def _create_status_icon(self) -> QLabel:
+        """创建 16x16 固定尺寸的校验状态图标 QLabel，初始为空。"""
+        icon = QLabel()
+        icon.setFixedSize(16, 16)
+        return icon
+
+    def _set_icon_state(self, icon: QLabel, passed: bool, tooltip: str) -> None:
+        """设置校验图标状态：通过显示绿色勾，失败显示红色叉 + tooltip。"""
+        style = QApplication.style()
+        if passed:
+            pixmap = style.standardIcon(
+                QStyle.StandardPixmap.SP_DialogApplyButton
+            ).pixmap(16, 16)
+        else:
+            pixmap = style.standardIcon(
+                QStyle.StandardPixmap.SP_DialogCancelButton
+            ).pixmap(16, 16)
+        icon.setPixmap(pixmap)
+        icon.setToolTip(tooltip if not passed else "")
+
+    def _section_divider(self) -> QWidget:
+        line = QWidget()
+        line.setFixedHeight(1)
+        line.setObjectName("sectionDivider")
+        return line
 
     def _connect_signals(self) -> None:
         self._preset_combo.currentIndexChanged.connect(self._on_preset_changed)
@@ -247,6 +329,7 @@ class ConfigPanel(QWidget):
 
     def _on_config_changed(self) -> None:
         self._save_timer.start()
+        self._schedule_validation()
 
     def _do_save(self) -> None:
         config = self._collect_config()
@@ -283,6 +366,79 @@ class ConfigPanel(QWidget):
         except Exception:
             return None
 
+    # --- 校验反馈 ---
+
+    def set_video_path(self, path: Path | None) -> None:
+        """设置当前视频路径，供 MainWindow 在 video_loaded 时调用。"""
+        self._video_path = path
+        self._schedule_validation()
+
+    def _schedule_validation(self) -> None:
+        """启动 300ms 防抖 timer，避免频繁校验。"""
+        self._validation_timer.start()
+
+    def _do_validation(self) -> None:
+        """执行全部校验，更新图标状态和汇总标签，emit validation_changed 信号。"""
+        config = self._collect_config()
+        if config is None:
+            return
+
+        video_path = self._video_path
+        if video_path is not None and video_path.exists():
+            result = validate_all(config, video_path)
+        else:
+            result = validate_config_only(config)
+
+        # 分类错误到各区块
+        asr_errors = [e for e in result.errors if e.stage == "asr"]
+        trans_errors = [e for e in result.errors if e.stage == "translation"]
+        tts_errors = [e for e in result.errors if e.stage == "tts"]
+
+        # 更新 3 个校验图标
+        self._set_icon_state(
+            self._asr_status_icon,
+            passed=len(asr_errors) == 0,
+            tooltip=self._build_tooltip(asr_errors),
+        )
+        self._set_icon_state(
+            self._translation_status_icon,
+            passed=len(trans_errors) == 0,
+            tooltip=self._build_tooltip(trans_errors),
+        )
+        self._set_icon_state(
+            self._tts_status_icon,
+            passed=len(tts_errors) == 0,
+            tooltip=self._build_tooltip(tts_errors),
+        )
+
+        # 更新汇总标签
+        self._update_validation_summary(result.errors)
+
+        self.validation_changed.emit(result.is_valid)
+
+    def _build_tooltip(self, errors: list[ValidationError]) -> str:
+        """构建 tooltip 文本：message + suggestion。"""
+        if not errors:
+            return ""
+        parts: list[str] = []
+        for e in errors:
+            parts.append(f"{e}\n→ {e.suggestion}")
+        return "\n\n".join(parts)
+
+    def _update_validation_summary(self, errors: list[ValidationError]) -> None:
+        """更新校验汇总标签：全部通过显示绿色，有失败显示橙色。"""
+        self._validation_summary_label.setVisible(True)
+        if len(errors) == 0:
+            self._validation_summary_label.setText("✅ 全部就绪")
+            self._validation_summary_label.setStyleSheet(
+                f"color: {COLOR_SUCCESS}; font-size: 11pt; font-weight: bold;"
+            )
+        else:
+            self._validation_summary_label.setText(f"⚠️ {len(errors)} 项未通过")
+            self._validation_summary_label.setStyleSheet(
+                f"color: {COLOR_WARNING}; font-size: 11pt; font-weight: bold;"
+            )
+
     def load_config(self) -> None:
         if self._config_path.exists():
             try:
@@ -294,6 +450,8 @@ class ConfigPanel(QWidget):
             save_config(config, self._config_path)
         self._fill_from_config(config)
         self.refresh_schemes()
+        # 加载配置后触发首次校验
+        self._schedule_validation()
 
     def get_config(self) -> AppConfig:
         config = self._collect_config()

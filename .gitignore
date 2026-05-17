@@ -23,6 +23,7 @@ output/*
 !output/.temp/.gitkeep
 logs/*
 !logs/.gitkeep
+/temp
 
 # Environment
 .env
@@ -43,3 +44,4 @@ _bmad-output/
 .claude/
 # Codex
 .agents/
+.sisyphus/

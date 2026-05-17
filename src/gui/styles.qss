@@ -1,0 +1,279 @@
+/* ================================================================
+ * video_translator 全局 QSS 样式表
+ *
+ * 色值引用 constants.py:
+ *   COLOR_PRIMARY_BG    #FFFFFF
+ *   COLOR_SECONDARY_BG  #F5F5F7
+ *   COLOR_PRIMARY_TEXT  #1D1D1F
+ *   COLOR_SECONDARY_TEXT #86868B
+ *   COLOR_TERTIARY_TEXT  #AEAEB2
+ *   COLOR_ACCENT        #007AFF
+ *   COLOR_SUCCESS       #34C759
+ *   COLOR_ERROR         #FF3B30
+ *   COLOR_BORDER        #D2D2D7
+ *   COLOR_DIVIDER       #E8E8ED
+ *   COLOR_INPUT_BG      #FAFAFA
+ *
+ * 字体层级:
+ *   标题 15pt bold  — 窗口主标题
+ *   区块标题 12pt bold  — 配置分区 (ASR/翻译/TTS)
+ *   正文 12pt normal — 输入框、下拉框
+ *   标签 11pt normal — 表单字段标签
+ *   辅助 10pt normal — 提示文字、次要说明
+ *
+ * 圆角: 4/6/8/12px 四级
+ * ================================================================ */
+
+/* ---- 主窗口 ---- */
+QMainWindow {
+    background: #FFFFFF;
+}
+
+/* ---- 通用标签 ---- */
+QLabel {
+    color: #1D1D1F;
+    font-size: 12pt;
+}
+
+/* ---- 区块标题标签 (objectName="sectionTitle") ---- */
+QLabel#sectionTitle {
+    color: #1D1D1F;
+    font-size: 12pt;
+    font-weight: bold;
+    background-color: transparent;
+    padding: 0px;
+}
+
+/* ---- 字段标签 (objectName="fieldLabel") ---- */
+QLabel#fieldLabel {
+    color: #86868B;
+    font-size: 11pt;
+    font-weight: normal;
+}
+
+/* ---- 辅助说明标签 (objectName="auxLabel") ---- */
+QLabel#auxLabel {
+    color: #AEAEB2;
+    font-size: 10pt;
+    font-weight: normal;
+}
+
+/* ---- 分割线 (objectName="sectionDivider") ---- */
+QWidget#sectionDivider {
+    background-color: #E8E8ED;
+}
+
+/* ---- 主按钮 (objectName="primaryButton") ---- */
+QPushButton#primaryButton {
+    background: #007AFF;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 0px 20px;
+    font-size: 12pt;
+    font-weight: 500;
+    min-height: 36px;
+}
+QPushButton#primaryButton:hover {
+    background: #0066D6;
+}
+QPushButton#primaryButton:pressed {
+    background: #0055BB;
+}
+QPushButton#primaryButton:disabled {
+    background: #99CCFF;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---- 次按钮 (objectName="secondaryButton") ---- */
+QPushButton#secondaryButton {
+    background: #FFFFFF;
+    color: #1D1D1F;
+    border: 1px solid #D2D2D7;
+    border-radius: 6px;
+    padding: 0px 20px;
+    font-size: 12pt;
+    font-weight: normal;
+    min-height: 36px;
+}
+QPushButton#secondaryButton:hover {
+    background: #F5F5F7;
+    border-color: #C0C0C5;
+}
+QPushButton#secondaryButton:pressed {
+    background: #E8E8ED;
+}
+QPushButton#secondaryButton:disabled {
+    color: #AEAEB2;
+    border-color: #E8E8ED;
+    background: #FAFAFA;
+}
+
+/* ---- 小型操作按钮 (objectName="inlineButton") ---- */
+QPushButton#inlineButton {
+    background: #FFFFFF;
+    color: #007AFF;
+    border: 1px solid #D2D2D7;
+    border-radius: 4px;
+    padding: 0px 12px;
+    font-size: 11pt;
+    font-weight: normal;
+    min-height: 28px;
+}
+QPushButton#inlineButton:hover {
+    background: #F5F5F7;
+    border-color: #007AFF;
+}
+QPushButton#inlineButton:pressed {
+    background: #E8E8ED;
+}
+
+/* ---- 文字链接按钮 (objectName="textButton") ---- */
+QPushButton#textButton {
+    background: transparent;
+    color: #007AFF;
+    border: none;
+    padding: 0px;
+    font-size: 11pt;
+    font-weight: normal;
+}
+QPushButton#textButton:hover {
+    color: #0066D6;
+    text-decoration: underline;
+}
+QPushButton#textButton:pressed {
+    color: #0055BB;
+}
+
+/* ---- 下拉框 ---- */
+QComboBox {
+    background: #FAFAFA;
+    border: 1px solid #D2D2D7;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #1D1D1F;
+    font-size: 12pt;
+    min-height: 20px;
+}
+QComboBox:hover {
+    border-color: #007AFF;
+}
+QComboBox:focus {
+    border-color: #007AFF;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox::down-arrow {
+    width: 10px;
+    height: 6px;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF;
+    border: 1px solid #D2D2D7;
+    selection-background-color: #007AFF;
+    selection-color: #FFFFFF;
+    outline: none;
+    border-radius: 4px;
+}
+
+/* ---- 单行输入框 ---- */
+QLineEdit {
+    background: #FAFAFA;
+    border: 1px solid #D2D2D7;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: #1D1D1F;
+    font-size: 12pt;
+    min-height: 20px;
+}
+QLineEdit:focus {
+    border-color: #007AFF;
+    background: #FFFFFF;
+}
+QLineEdit:read-only {
+    background: #F5F5F7;
+    color: #86868B;
+}
+
+/* ---- 滑块 ---- */
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #E8E8ED;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #007AFF;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+QSlider::handle:horizontal:hover {
+    background: #0066D6;
+}
+
+/* ---- QSplitter 分隔线 ---- */
+QSplitter::handle {
+    background: #E8E8ED;
+    width: 1px;
+}
+
+/* ---- 校验状态汇总 (objectName="validationSummary") ---- */
+QLabel#validationSummary {
+    font-size: 11pt;
+    font-weight: bold;
+    padding: 4px 0px;
+}
+
+/* ---- QScrollArea ---- */
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+
+/* ---- QScrollBar (macOS 简约风格) ---- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #C6C6C8;
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #A6A6A8;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #C6C6C8;
+    border-radius: 4px;
+    min-width: 30px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #A6A6A8;
+}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: transparent;
+}

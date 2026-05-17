@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.models import ProgressEvent, StageState, StageStatus, SubtitleSegment
+from src.models import PipelineResult, ProgressEvent, StageState, StageStatus, SubtitleSegment
 
 
 class TestSubtitleSegment:
@@ -87,3 +87,34 @@ class TestProgressEvent:
     def test_create_with_message(self) -> None:
         event = ProgressEvent(stage="TTS", progress=0.8, message="正在合成第 15/50 段")
         assert event.message == "正在合成第 15/50 段"
+
+
+class TestPipelineResult:
+    def test_success_result(self) -> None:
+        result = PipelineResult(
+            video_path=Path("/input/video.mp4"),
+            output_dir=Path("/output"),
+            audio_path=Path("/output/.temp/abc/audio.wav"),
+        )
+        assert result.success is True
+        assert result.error is None
+        assert result.audio_path == Path("/output/.temp/abc/audio.wav")
+
+    def test_failure_result(self) -> None:
+        result = PipelineResult(
+            video_path=Path("/input/video.mp4"),
+            output_dir=Path("/output"),
+            success=False,
+            error="ffmpeg 未找到",
+        )
+        assert result.success is False
+        assert result.error == "ffmpeg 未找到"
+
+    def test_default_values(self) -> None:
+        result = PipelineResult(
+            video_path=Path("/input/video.mp4"),
+            output_dir=Path("/output"),
+        )
+        assert result.audio_path == Path()
+        assert result.success is True
+        assert result.error is None

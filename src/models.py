@@ -44,3 +44,12 @@ class ProgressEvent:
     stage: str
     progress: float
     message: str = ""
+
+
+@dataclass
+class PipelineResult:
+    video_path: Path
+    output_dir: Path
+    audio_path: Path = Path()
+    success: bool = True
+    error: str | None = None

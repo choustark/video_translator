@@ -295,8 +295,16 @@ class Pipeline:
     def _run_alignment(
         self, segments: list[SubtitleSegment], temp_dir: Path,
     ) -> list[SubtitleSegment]:
-        """语速自适应占位 — Story 4-5 实现。"""
-        logger.info("语速自适应 | PLACEHOLDER | 将由 Story 4-5 实现")
+        """语速自适应对齐 — ffmpeg atempo + 静音填充。"""
+        from src.composer.speed_adapter import SpeedAdapter
+        from src.models import ProgressEvent
+
+        adapter = SpeedAdapter()
+
+        def progress_callback(event: ProgressEvent) -> None:
+            self.signals.stage_progress.emit(event.stage, event.progress)
+
+        segments = adapter.align(segments, temp_dir, progress_callback)
         return segments
 
     def _compose(

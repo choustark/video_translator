@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+import logging
+import subprocess
+from pathlib import Path
+from typing import Callable
+
+from pydub import AudioSegment  # type: ignore[import-untyped]
+
+from src.exceptions import PipelineError
+from src.models import ProgressEvent, SubtitleSegment
+
+logger = logging.getLogger("video_translator")
+
+_MAX_SPEED_RATIO = 1.5
+_SINGLE_DEVIATION_THRESHOLD = 0.15
+_GLOBAL_DEVIATION_THRESHOLD = 0.10
+
+
+class SpeedAdapter:
+    """语速自适应对齐 — ffmpeg atempo 加速 + apad 静音填充。"""
+
+    def align(
+        self,
+        segments: list[SubtitleSegment],
+        temp_dir: Path,
+        progress_callback: Callable[[ProgressEvent], None] | None = None,
+    ) -> list[SubtitleSegment]:
+        total = len(segments)
+        if total == 0:
+            return segments
+
+        aligned_dir = temp_dir / "aligned"
+        aligned_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, seg in enumerate(segments):
+            if not seg.audio_path or seg.audio_duration <= 0:
+                continue
+
+            target_duration = seg.end_time - seg.start_time
+            actual_duration = seg.audio_duration
+            output_path = aligned_dir / f"{seg.index:04d}.wav"
+            original_path = seg.audio_path
+
+            if actual_duration < target_duration:
+                self._pad(original_path, target_duration, output_path)
+            elif actual_duration > target_duration:
+                speed_ratio = actual_duration / target_duration
+                if speed_ratio <= _MAX_SPEED_RATIO:
+                    self._speed_up(original_path, speed_ratio, output_path)
+                else:
+                    logger.warning(
+                        "对齐 | 跳过加速 | seg=%d ratio=%.2f > %.1fx",
+                        seg.index,
+                        speed_ratio,
+                        _MAX_SPEED_RATIO,
+                    )
+                    self._copy(original_path, output_path)
+            else:
+                self._copy(original_path, output_path)
+
+            seg.audio_path = output_path
+            logger.info("对齐 | 原始=%s → 对齐=%s", original_path, output_path)
+
+            self._check_deviation(seg, target_duration)
+
+            if progress_callback:
+                progress_callback(ProgressEvent(
+                    stage="语速自适应",
+                    progress=(i + 1) / total,
+                    message=f"正在对齐 {i + 1}/{total}",
+                ))
+
+        self._check_global_deviation(segments)
+
+        if progress_callback:
+            progress_callback(ProgressEvent(
+                stage="语速自适应",
+                progress=1.0,
+                message=f"对齐完成 {total}/{total}",
+            ))
+
+        return segments
+
+    def _pad(self, input_path: Path, target_duration: float, output_path: Path) -> None:
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-filter:a", f"apad=whole_dur={target_duration:.3f}",
+            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            str(output_path),
+        ]
+        self._run_ffmpeg(cmd)
+
+    def _speed_up(self, input_path: Path, speed_ratio: float, output_path: Path) -> None:
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-filter:a", f"atempo={speed_ratio:.4f}",
+            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            str(output_path),
+        ]
+        self._run_ffmpeg(cmd)
+
+    def _copy(self, input_path: Path, output_path: Path) -> None:
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            str(output_path),
+        ]
+        self._run_ffmpeg(cmd)
+
+    def _run_ffmpeg(self, cmd: list[str]) -> None:
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+        except subprocess.CalledProcessError as e:
+            stderr_text = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+            raise PipelineError(
+                f"ffmpeg 对齐失败: {stderr_text[:200]}",
+                stage="语速自适应",
+                suggestion="请确认 ffmpeg 已安装且音频文件有效",
+            ) from e
+        except subprocess.TimeoutExpired as e:
+            raise PipelineError(
+                "ffmpeg 对齐超时（30秒）",
+                stage="语速自适应",
+                suggestion="音频文件可能过大",
+            ) from e
+        except FileNotFoundError as e:
+            raise PipelineError(
+                "ffmpeg 未找到",
+                stage="语速自适应",
+                suggestion="请安装 ffmpeg: brew install ffmpeg",
+            ) from e
+
+    def _check_deviation(self, seg: SubtitleSegment, target_duration: float) -> None:
+        try:
+            audio = AudioSegment.from_wav(str(seg.audio_path))
+            actual = round(float(audio.duration_seconds), 3)
+        except Exception:
+            logger.warning("对齐 | 偏差检查失败 | seg=%d path=%s", seg.index, seg.audio_path)
+            return
+
+        seg.audio_duration = actual
+        if target_duration > 0:
+            deviation = abs(actual - target_duration) / target_duration
+            if deviation > _SINGLE_DEVIATION_THRESHOLD:
+                logger.warning(
+                    "对齐 | 偏差过大 | seg=%d target=%.3f actual=%.3f deviation=%.1f%%",
+                    seg.index, target_duration, actual, deviation * 100,
+                )
+
+    def _check_global_deviation(self, segments: list[SubtitleSegment]) -> None:
+        total_actual = 0.0
+        total_target = 0.0
+        for seg in segments:
+            if seg.audio_duration > 0:
+                total_actual += seg.audio_duration
+                total_target += seg.end_time - seg.start_time
+
+        if total_target > 0:
+            global_deviation = abs(total_actual - total_target) / total_target
+            if global_deviation > _GLOBAL_DEVIATION_THRESHOLD:
+                logger.warning(
+                    "对齐 | 全局偏差 | total_actual=%.1f total_target=%.1f deviation=%.1f%%",
+                    total_actual, total_target, global_deviation * 100,
+                )

@@ -204,6 +204,7 @@ class TestProcess:
             patch("src.asr.create_asr_engine", return_value=mock_engine),
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
+            patch("src.composer.speed_adapter.SpeedAdapter") as mock_adapter_cls,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
@@ -212,6 +213,9 @@ class TestProcess:
             mock_tts_engine = MagicMock()
             mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None: segs
             mock_tts_factory.return_value = mock_tts_engine
+            mock_adapter = MagicMock()
+            mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
+            mock_adapter_cls.return_value = mock_adapter
             result = pipeline.process(video, output_dir)
 
         assert result.success is True
@@ -288,6 +292,7 @@ class TestStart:
             patch("src.asr.create_asr_engine", return_value=mock_engine),
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
+            patch("src.composer.speed_adapter.SpeedAdapter") as mock_adapter_cls,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
@@ -296,6 +301,9 @@ class TestStart:
             mock_tts_engine = MagicMock()
             mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None: segs
             mock_tts_factory.return_value = mock_tts_engine
+            mock_adapter = MagicMock()
+            mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
+            mock_adapter_cls.return_value = mock_adapter
             pipeline.start(video, output_dir)
             import time
 
@@ -537,3 +545,57 @@ class TestRunTTS:
             pytest.raises(PipelineError, match="预加载超时"),
         ):
             pipeline._run_tts(segments, tmp_path)
+
+
+class TestRunAlignment:
+    def test_alignment_overwrites_audio_path(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=2.0,
+            source_text="Hi", translated_text="嗨",
+            audio_path=tmp_path / "segments" / "0000.mp3",
+            audio_duration=1.5,
+        )]
+
+        def fake_align(segs, td, cb=None):
+            segs[0].audio_path = td / "aligned" / "0000.wav"
+            segs[0].audio_duration = 2.0
+            return segs
+
+        with patch("src.composer.speed_adapter.SpeedAdapter") as mock_cls:
+            mock_instance = MagicMock()
+            mock_instance.align.side_effect = fake_align
+            mock_cls.return_value = mock_instance
+            result = pipeline._run_alignment(segments, tmp_path)
+
+        assert result[0].audio_path == tmp_path / "aligned" / "0000.wav"
+        assert result[0].audio_duration == 2.0
+
+    def test_alignment_emits_stage_progress(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=2.0,
+            source_text="Hi", translated_text="嗨",
+            audio_path=tmp_path / "segments" / "0000.mp3",
+            audio_duration=1.5,
+        )]
+
+        progress_events: list[tuple[str, float]] = []
+        pipeline.signals.stage_progress.connect(
+            lambda name, pct: progress_events.append((name, pct)),
+        )
+
+        def fake_align(segs, td, cb=None):
+            if cb:
+                from src.models import ProgressEvent
+                cb(ProgressEvent(stage="语速自适应", progress=1.0, message="正在对齐 1/1"))
+            return segs
+
+        with patch("src.composer.speed_adapter.SpeedAdapter") as mock_cls:
+            mock_instance = MagicMock()
+            mock_instance.align.side_effect = fake_align
+            mock_cls.return_value = mock_instance
+            pipeline._run_alignment(segments, tmp_path)
+
+        assert len(progress_events) == 1
+        assert progress_events[0] == ("语速自适应", 1.0)

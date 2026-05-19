@@ -43,6 +43,7 @@ class GLMProvider(TranslationProvider):
 
     @property
     def client(self) -> httpx.Client:
+        """懒加载的 httpx.Client 实例，超时 30 秒。"""
         if self._client is None:
             self._client = httpx.Client(timeout=30.0)
         return self._client
@@ -52,6 +53,21 @@ class GLMProvider(TranslationProvider):
         segments: list[SubtitleSegment],
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """逐段翻译字幕，通过 httpx 调用 GLM API，使用 tenacity 进行 3 次重试。
+
+        跳过 source_text 为空的片段。每翻译一段后通过 progress_callback 上报进度，
+        重试时也会上报重试状态。
+
+        Args:
+            segments: 待翻译的字幕片段列表。
+            progress_callback: 翻译进度回调，接收 ProgressEvent。
+
+        Returns:
+            翻译完成后的字幕片段列表，translated_text 已填充。
+
+        Raises:
+            PipelineError: API 调用失败（重试耗尽、4xx 错误、返回格式异常等）。
+        """
         total = len(segments)
         if total == 0:
             return segments

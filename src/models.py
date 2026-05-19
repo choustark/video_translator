@@ -34,6 +34,11 @@ class StageState:
 
     @property
     def duration(self) -> float | None:
+        """计算阶段持续时长（秒）。
+
+        Returns:
+            当 start_time 和 end_time 都已设置时返回二者之差，否则返回 ``None``。
+        """
         if self.start_time is not None and self.end_time is not None:
             return self.end_time - self.start_time
         return None

@@ -25,6 +25,22 @@ class EdgeTTSEngine(TTSEngine):
         temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """使用 Edge-TTS 将翻译后的字幕段落合成为 MP3 语音文件。
+
+        遍历每条字幕段落，跳过空文本，调用 Edge-TTS API 生成音频，
+        并通过 pydub 获取音频时长。语速参数映射：0.5→-50%，2.0→+50%。
+
+        Args:
+            segments: 待合成的字幕段落列表，每段需包含 translated_text。
+            temp_dir: 临时目录，音频片段保存到 temp_dir/segments/ 下。
+            progress_callback: 可选的进度回调函数，报告当前合成进度。
+
+        Returns:
+            更新后的字幕段落列表，每段填充了 audio_path（MP3）和 audio_duration。
+
+        Raises:
+            PipelineError: Edge-TTS 调用失败或音频时长读取失败时抛出。
+        """
         total = len(segments)
         if total == 0:
             return segments

@@ -72,6 +72,17 @@ PRESETS: dict[str, AppConfig] = {name: AppConfig(**data) for name, data in _PRES
 
 
 def get_preset(name: str) -> AppConfig:
+    """按名称获取预设配置方案的深拷贝。
+
+    Args:
+        name: 预设方案名称，可选值见 ``PRESETS`` 字典的键。
+
+    Returns:
+        该预设方案的 ``AppConfig`` 深拷贝实例。
+
+    Raises:
+        ConfigError: 预设方案名称不存在时抛出。
+    """
     if name not in PRESETS:
         raise ConfigError(
             f"未知预设方案: '{name}'",
@@ -82,6 +93,17 @@ def get_preset(name: str) -> AppConfig:
 
 
 def load_config(path: Path) -> AppConfig:
+    """从 YAML 文件加载并校验应用配置。
+
+    Args:
+        path: YAML 配置文件的路径。
+
+    Returns:
+        校验通过的 ``AppConfig`` 实例。
+
+    Raises:
+        ConfigError: 文件不存在、YAML 格式错误或字段校验失败时抛出。
+    """
     if not path.exists():
         raise ConfigError(
             f"配置文件不存在: {path}",
@@ -125,6 +147,14 @@ _QuotedDumper.add_representer(str, _str_representer)
 
 
 def save_config(config: AppConfig, path: Path) -> None:
+    """将应用配置序列化为 YAML 并写入文件。
+
+    所有字符串值会被双引号包裹，父目录不存在时自动创建。
+
+    Args:
+        config: 要保存的 ``AppConfig`` 实例。
+        path: 目标文件路径。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     data = config.model_dump()
     content = yaml.dump(

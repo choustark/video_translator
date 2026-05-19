@@ -19,12 +19,34 @@ class SchemeManager:
         return safe
 
     def save_scheme(self, name: str, config: AppConfig) -> None:
+        """将配置保存为命名方案，自动清除 API Key 后写入文件。
+
+        Args:
+            name: 方案名称，对应 ``schemes_dir/<name>.yaml`` 文件。
+            config: 要保存的应用配置。
+        """
         save_config(self._strip_api_key(config), self._scheme_path(name))
 
     def list_schemes(self) -> list[str]:
+        """列出所有已保存的方案名称。
+
+        Returns:
+            按字母排序的方案名称列表。
+        """
         return sorted(p.stem for p in self._dir.glob("*.yaml"))
 
     def load_scheme(self, name: str) -> AppConfig:
+        """按名称加载已保存的方案配置。
+
+        Args:
+            name: 方案名称。
+
+        Returns:
+            从文件加载并校验通过的 ``AppConfig`` 实例。
+
+        Raises:
+            ConfigError: 方案文件不存在或配置内容无效时抛出。
+        """
         path = self._scheme_path(name)
         if not path.exists():
             raise ConfigError(
@@ -35,6 +57,14 @@ class SchemeManager:
         return load_config(path)
 
     def delete_scheme(self, name: str) -> None:
+        """删除指定名称的方案文件。
+
+        Args:
+            name: 要删除的方案名称。
+
+        Raises:
+            ConfigError: 方案文件不存在时抛出。
+        """
         path = self._scheme_path(name)
         if not path.exists():
             raise ConfigError(
@@ -45,10 +75,25 @@ class SchemeManager:
         path.unlink()
 
     def export_scheme(self, name: str, target_path: Path) -> None:
+        """将已保存的方案导出到指定路径，自动清除 API Key。
+
+        Args:
+            name: 要导出的方案名称。
+            target_path: 导出目标文件路径。
+        """
         config = self.load_scheme(name)
         save_config(self._strip_api_key(config), target_path)
 
     def import_scheme(self, source_path: Path, name: str) -> None:
+        """从外部 YAML 文件导入配置并保存为命名方案，自动清除 API Key。
+
+        Args:
+            source_path: 源 YAML 配置文件路径。
+            name: 导入后的方案名称。
+
+        Raises:
+            ConfigError: 源文件不存在或内容无效时抛出。
+        """
         if not source_path.exists():
             raise ConfigError(
                 f"源文件不存在: {source_path}",

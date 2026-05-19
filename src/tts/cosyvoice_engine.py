@@ -19,6 +19,23 @@ class CosyVoiceEngine(TTSEngine):
         temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """使用 CosyVoice 将翻译后的字幕段落合成为语音文件。
+
+        尚未实现，保留接口占位。当前通过 importlib.util.find_spec 检测
+        CosyVoice 是否已安装，未安装时抛出 PipelineError 提示降级到 Edge-TTS；
+        已安装时同样抛出 PipelineError 提示功能尚未完成。
+
+        Args:
+            segments: 待合成的字幕段落列表。
+            temp_dir: 临时目录。
+            progress_callback: 可选的进度回调函数。
+
+        Returns:
+            更新后的字幕段落列表（当前始终不会正常返回）。
+
+        Raises:
+            PipelineError: CosyVoice 未安装或完整合成尚未实现时抛出。
+        """
         if importlib.util.find_spec("cosyvoice") is None:
             logger.warning("TTS | CosyVoice 未安装，降级到 Edge-TTS")
             raise PipelineError(

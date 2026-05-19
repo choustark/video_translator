@@ -16,11 +16,18 @@ _ASR_MEMORY_REQUIREMENT_GB = 6.0
 
 
 class MLXWhisperEngine(ASREngine):
+    """基于 mlx-whisper 的 ASR 引擎，针对 Apple Silicon MPS/Metal 加速。"""
+
     def transcribe(
         self,
         audio_path: str,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """使用 mlx-whisper 将音频转录为字幕段。
+
+        内存预检确保至少有 6GB 可用，转录完成后执行 gc.collect() 释放模型内存。
+        进度回调在转录完成后分 10 步模拟推送（mlx-whisper 为阻塞调用，无原生进度）。
+        """
         self._check_memory()
 
         try:

@@ -8,6 +8,8 @@ from src.models import ProgressEvent, SubtitleSegment
 
 
 class WhisperEngine(ASREngine):
+    """标准 Whisper 引擎（尚未实现，保留接口占位）。"""
+
     def __init__(self, config: ASRConfig) -> None:
         super().__init__(config)
 

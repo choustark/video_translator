@@ -440,6 +440,10 @@ class ConfigPanel(QWidget):
             )
 
     def load_config(self) -> None:
+        """从配置文件加载配置并填充面板控件，刷新已保存方案列表。
+
+        如果配置文件不存在或加载失败，使用"高质量"预设作为默认值并写入文件。
+        """
         if self._config_path.exists():
             try:
                 config = load_config(self._config_path)
@@ -454,6 +458,14 @@ class ConfigPanel(QWidget):
         self._schedule_validation()
 
     def get_config(self) -> AppConfig:
+        """返回当前面板配置的深拷贝。
+
+        如果面板控件状态无法构建有效配置（_collect_config 返回 None），
+        退回使用"高质量"预设。
+
+        Returns:
+            AppConfig: 当前配置的深拷贝，修改返回值不影响面板状态。
+        """
         config = self._collect_config()
         if config is None:
             config = get_preset("high_quality")
@@ -477,6 +489,7 @@ class ConfigPanel(QWidget):
     # --- 方案管理 ---
 
     def refresh_schemes(self) -> None:
+        """刷新已保存方案下拉框，重新加载方案列表并恢复之前选中项。"""
         self._scheme_combo.blockSignals(True)
         current_data = self._scheme_combo.currentData()
         self._scheme_combo.clear()

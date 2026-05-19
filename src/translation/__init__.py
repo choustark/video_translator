@@ -4,6 +4,19 @@ from src.translation.base import TranslationProvider
 
 
 def create_translation_provider(config: TranslationConfig) -> TranslationProvider:
+    """根据配置创建翻译后端实例。
+
+    支持的后端: "glm", "deepseek", "openai", "deepl", "nllb"。
+
+    Args:
+        config: 翻译配置，engine 字段决定使用哪个后端。
+
+    Returns:
+        对应引擎的 TranslationProvider 实例。
+
+    Raises:
+        ConfigError: 当 config.engine 不是已知的后端名称时。
+    """
     from .deepl_provider import DeepLProvider
     from .deepseek_provider import DeepSeekProvider
     from .glm_provider import GLMProvider

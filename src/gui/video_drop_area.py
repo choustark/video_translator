@@ -212,6 +212,11 @@ class VideoDropArea(QFrame):
             self._set_idle_state()
 
     def dropEvent(self, event: QDropEvent) -> None:
+        """Qt 拖放事件重写：从拖放事件中提取视频文件路径并处理。
+
+        Args:
+            event: Qt 拖放事件对象。
+        """
         if not event.mimeData().hasUrls():
             event.ignore()
             return

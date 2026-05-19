@@ -16,4 +16,5 @@ class OpenAIProvider(TranslationProvider):
         segments: list[SubtitleSegment],
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """尚未实现，保留接口占位。"""
         raise NotImplementedError("OpenAIProvider not yet implemented")

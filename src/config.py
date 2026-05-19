@@ -21,6 +21,7 @@ class ASRConfig(BaseModel):
 class TranslationConfig(BaseModel):
     engine: Literal["glm", "deepseek", "openai", "deepl", "nllb"]
     api_key: str = ""
+    model: str = "glm-4-flash"
     source_lang: str = "EN"
     target_lang: str = "ZH"
 

@@ -77,30 +77,36 @@ v1 用简单方案先跑通，不提前优化。
 
 使用 BMad Method 进行产品规划，模块：BMad Method。
 
-### 已完成
+### 1-analysis ✅ 已完成
 
 - [x] 技术调研 → `_bmad-output/planning-artifacts/research/technical-english-to-chinese-video-translator-python-research-2026-04-28.md`
 - [x] 头脑风暴 → `_bmad-output/brainstorming/brainstorming-session-2026-05-08-1430.md`（27 项产品决策）
+
+### 2-planning ✅ 已完成
+
 - [x] 产品技术规格 → `_bmad-output/planning-artifacts/product-technical-spec-2026-05-09.md`
 - [x] PRD → `_bmad-output/planning-artifacts/prd.md`（46 条 FR + 19 条 NFR）
 
-### 下一步
+### 3-solutioning ✅ 已完成
 
-按 BMad 流程，PRD 完成后进入 3-solutioning 阶段：
+- [x] UX 设计 → `_bmad-output/planning-artifacts/ux-design-specification.md`
+- [x] 架构设计 → `_bmad-output/planning-artifacts/architecture.md`
+- [x] Epic/Story 拆分 → `_bmad-output/planning-artifacts/epics.md`
+- [x] 实施就绪检查 → `_bmad-output/planning-artifacts/implementation-readiness-report-2026-05-12.md`
 
-```
-当前: PRD ✅
-  ↓
-[CU] UX 设计 (bmad-create-ux-design) — 可选，对桌面应用有价值
-  ↓
-[CA] 架构设计 (bmad-create-architecture) — 必须
-  ↓
-[CE] Epic/Story 拆分 (bmad-create-epics-and-stories) — 必须
-  ↓
-[IR] 实施就绪检查 (bmad-check-implementation-readiness) — 必经门
-  ↓
-4-implementation 阶段（Sprint Planning → Dev Story → Code Review）
-```
+### 4-implementation 🔄 进行中
+
+当前进度详见 `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+| Epic | 状态 | 说明 |
+|------|------|------|
+| Epic 1: 项目基础与配置管理 | ✅ done | 6 个 story 全部完成 |
+| Epic 2: 桌面应用外壳与视频输入 | ✅ done | 3 个 story 全部完成 |
+| Epic 3: 翻译前校验 | ✅ done | 2 个 story 全部完成 |
+| **Epic 4: 端到端翻译管线** | **🔄 进行中** | 4-1 ✅ 4-2 ✅ → **下一个: 4-3 文本翻译** |
+| Epic 5: 错误恢复与系统韧性 | backlog | 还没开始 |
+
+**下一步：** 创建并实现 Story 4-3 文本翻译（`bmad-create-story`）
 
 ### 输入文档说明
 
@@ -115,17 +121,44 @@ PRD 由三份文档驱动：
 video_translator/
 ├── _bmad-output/
 │   ├── brainstorming/           # 头脑风暴产出
-│   ├── planning-artifacts/      # PRD、规格、调研
+│   ├── planning-artifacts/      # PRD、规格、调研、架构、UX 设计
 │   │   ├── prd.md               # 主 PRD 文档
+│   │   ├── architecture.md      # 架构设计
+│   │   ├── ux-design-specification.md  # UX 设计规格
+│   │   ├── epics.md             # Epic/Story 拆分
+│   │   ├── implementation-readiness-report-2026-05-12.md
 │   │   ├── product-technical-spec-2026-05-09.md
 │   │   └── research/            # 技术调研
-│   └── implementation-artifacts/ # 开发阶段产物（待创建）
+│   └── implementation-artifacts/ # 开发阶段产物（story 文件、sprint 状态、retro）
+│       ├── sprint-status.yaml   # Sprint 进度跟踪（权威数据源）
+│       ├── deferred-work.md     # 推迟到后续的已知问题
+│       └── epic-*-retro-*.md    # Epic 回顾
+├── src/                         # 源代码
+│   ├── asr/                     # ASR 引擎（mlx-whisper）
+│   ├── translation/             # 翻译后端（GLM/DeepSeek/本地 NLLB）
+│   ├── tts/                     # TTS 引擎（CosyVoice/Edge-TTS）
+│   ├── composer/                # 音视频合成（ffmpeg）
+│   ├── gui/                     # PySide6 UI 组件
+│   ├── utils/                   # 工具函数
+│   ├── config.py                # 配置管理（pydantic + YAML）
+│   ├── models.py                # 数据模型
+│   ├── pipeline.py              # 管线编排器
+│   ├── validators.py            # 翻译前校验
+│   ├── scheme_manager.py        # 配置方案管理
+│   └── signals.py               # Qt 信号定义
+├── models/                      # AI 模型文件（.gitignore）
+│   └── asr/
+│       └── whisper-medium-mlx/  # 已下载
+├── tests/                       # 测试
+├── scripts/                     # 辅助脚本
 ├── _bmad/                       # BMad 框架配置
 │   ├── bmm/                     # BMad Method 模块
-│   ├── custom/                  # 自定义覆盖
-│   └── scripts/                 # 解析脚本
-└── .Codex/                     # Codex 配置
-    └── skills/                  # BMad skills
+│   └── custom/                  # 自定义覆盖
+├── main.py                      # 入口
+├── pyproject.toml               # 项目配置
+├── ruff.toml                    # Lint/Format 配置
+├── config.yaml                  # 默认配置文件
+└── Dockerfile                   # Docker 打包
 ```
 
 ## 注意事项

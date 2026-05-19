@@ -1,15 +1,16 @@
 "asr":
   "engine": "mlx-whisper"
-  "model_path": "/Users/chou/work_space/vue_basic/"
+  "model_path": "models/asr/whisper-medium"
   "language": "en"
 "translation":
-  "engine": "glm"
-  "api_key": "8bcfcd42183c499180d6ceba065e2fdc.TGwF2GnELrSsXuYC"
+  "engine": "deepseek"
+  "api_key": "a211927317d94995bcb7c718816d9304.xxxxxxx"
+  "model": "glm-4-flash"
   "source_lang": "EN"
   "target_lang": "ZH"
 "tts":
   "engine": "cosyvoice"
-  "model_path": "/Users/chou/work_space/vue_basic/"
+  "model_path": ""
   "voice": "default"
-  "speed": 1.3
+  "speed": 1.0
 "preset": "high_quality"

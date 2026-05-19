@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Callable
 
 from src.config import TTSConfig
@@ -15,5 +16,6 @@ class TTSEngine(ABC):
     def synthesize(
         self,
         segments: list[SubtitleSegment],
+        temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]: ...

@@ -26,6 +26,7 @@ class Pipeline:
         self.signals = signals
         self.states: dict[str, StageState] = {name: StageState(name) for name in STAGE_NAMES}
         self._current_stage: str = STAGE_NAMES[0]
+        self._tts_ready_event = threading.Event()
 
     def start(self, video_path: Path, output_dir: Path) -> None:
         """在后台守护线程中启动管线。"""
@@ -201,18 +202,94 @@ class Pipeline:
     # ── 占位阶段（后续 Story 实现） ───────────────────────────
 
     def _run_asr(self, audio_path: Path) -> list[SubtitleSegment]:
-        """ASR 占位 — Story 4-2 实现。"""
-        logger.info("ASR | PLACEHOLDER | 将由 Story 4-2 实现")
-        return []
+        """ASR 语音识别 — 调用 mlx-whisper 引擎。"""
+        from src.asr import create_asr_engine
+        from src.models import ProgressEvent
+
+        engine = create_asr_engine(self.config.asr)
+
+        def progress_callback(event: ProgressEvent) -> None:
+            self.signals.stage_progress.emit(event.stage, event.progress)
+
+        preload_thread = threading.Thread(
+            target=self._preload_check_tts, daemon=True,
+        )
+        preload_thread.start()
+
+        segments = engine.transcribe(str(audio_path), progress_callback)
+
+        full_text = " ".join(seg.source_text for seg in segments)
+        if full_text:
+            self.signals.transcript_updated.emit(full_text)
+
+        return segments
+
+    def _preload_check_tts(self) -> None:
+        """检查 TTS 模型文件就绪性（轻量 I/O）。"""
+        try:
+            tts_path = Path(self.config.tts.model_path)
+            if tts_path.exists():
+                logger.info("预加载 | TTS 模型文件就绪 | path=%s", tts_path)
+            else:
+                logger.warning("预加载 | TTS 模型文件未找到 | path=%s", tts_path)
+        except Exception:
+            logger.exception("预加载 | TTS 检查异常")
+        finally:
+            self._tts_ready_event.set()
 
     def _run_translation(self, segments: list[SubtitleSegment]) -> list[SubtitleSegment]:
-        """翻译占位 — Story 4-3 实现。"""
-        logger.info("翻译 | PLACEHOLDER | 将由 Story 4-3 实现")
+        """文本翻译 — 调用翻译 API 引擎。"""
+        from src.models import ProgressEvent
+        from src.translation import create_translation_provider
+
+        provider = create_translation_provider(self.config.translation)
+
+        def progress_callback(event: ProgressEvent) -> None:
+            self.signals.stage_progress.emit(event.stage, event.progress)
+
+        segments = provider.translate(segments, progress_callback)
+
+        bilingual_lines: list[str] = []
+        for seg in segments:
+            if seg.source_text and seg.translated_text:
+                bilingual_lines.append(f"[EN] {seg.source_text}")
+                bilingual_lines.append(f"[中] {seg.translated_text}")
+        if bilingual_lines:
+            self.signals.transcript_updated.emit("\n".join(bilingual_lines))
+
         return segments
 
     def _run_tts(self, segments: list[SubtitleSegment], temp_dir: Path) -> list[SubtitleSegment]:
-        """TTS 占位 — Story 4-4 实现。"""
-        logger.info("TTS | PLACEHOLDER | 将由 Story 4-4 实现")
+        """TTS 语音合成 — 调用 TTS 引擎，支持 CosyVoice→Edge-TTS 降级。"""
+        from src.config import TTSConfig
+        from src.models import ProgressEvent
+        from src.tts import create_tts_engine
+
+        if not self._tts_ready_event.wait(timeout=30):
+            raise PipelineError(
+                "TTS 预加载超时（30秒）",
+                stage="TTS",
+                suggestion="请检查 TTS 模型路径配置或磁盘 I/O 状态",
+            )
+
+        def progress_callback(event: ProgressEvent) -> None:
+            self.signals.stage_progress.emit(event.stage, event.progress)
+
+        try:
+            engine = create_tts_engine(self.config.tts)
+            segments = engine.synthesize(segments, temp_dir, progress_callback)
+        except PipelineError:
+            if self.config.tts.engine == "cosyvoice":
+                logger.warning("TTS | CosyVoice 失败，降级到 Edge-TTS")
+                self.signals.tts_degraded.emit("cosyvoice", "edge-tts")
+                fallback_config = TTSConfig(
+                    engine="edge-tts", speed=self.config.tts.speed,
+                )
+                engine = create_tts_engine(fallback_config)
+                segments = engine.synthesize(segments, temp_dir, progress_callback)
+            else:
+                raise
+
         return segments
 
     def _run_alignment(

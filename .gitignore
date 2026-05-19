@@ -11,11 +11,9 @@ build/
 .pytest_cache/
 
 # Project runtime
-models/*
-!models/.gitkeep
-!models/asr/
+models/asr/*
 !models/asr/.gitkeep
-!models/tts/
+models/tts/*
 !models/tts/.gitkeep
 output/*
 !output/.gitkeep

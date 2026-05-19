@@ -311,6 +311,30 @@ class Pipeline:
         self, video_path: Path, segments: list[SubtitleSegment],
         temp_dir: Path, output_dir: Path,
     ) -> Path:
-        """音视频合成占位 — Story 4-6 实现。"""
-        logger.info("合成 | PLACEHOLDER | 将由 Story 4-6 实现")
-        return video_path
+        from src.composer.ffmpeg_wrapper import FFmpegWrapper
+        from src.composer.subtitle_generator import SubtitleGenerator
+
+        generator = SubtitleGenerator()
+        wrapper = FFmpegWrapper()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stem = video_path.stem
+
+        srt_path = temp_dir / "subtitles.srt"
+        generator.generate_srt(segments, srt_path)
+        srt_output = output_dir / f"{stem}.srt"
+        srt_output.write_text(srt_path.read_text(encoding="utf-8"), encoding="utf-8")
+        self.signals.stage_progress.emit("合成", 0.33)
+        logger.info("合成 | SRT | output=%s", srt_output)
+
+        video_duration = wrapper.get_video_duration(video_path)
+        chinese_audio_path = output_dir / f"{stem}_chinese_audio.wav"
+        wrapper.compose_chinese_audio(segments, video_duration, temp_dir, chinese_audio_path)
+        self.signals.stage_progress.emit("合成", 0.67)
+        logger.info("合成 | 中文音频 | output=%s", chinese_audio_path)
+
+        output_video_path = output_dir / f"{stem}_translated.mp4"
+        wrapper.compose_video(video_path, chinese_audio_path, srt_path, output_video_path)
+        self.signals.stage_progress.emit("合成", 1.0)
+        logger.info("合成 | 视频 | output=%s", output_video_path)
+
+        return output_video_path

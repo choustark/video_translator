@@ -33,6 +33,8 @@ from src.gui.constants import (
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
+from src.gui.pipeline_progress import PipelineProgress
+from src.gui.transcript_panel import TranscriptPanel
 from src.gui.video_drop_area import VideoDropArea
 from src.pipeline import Pipeline
 from src.signals import PipelineSignals
@@ -109,6 +111,16 @@ class MainWindow(QMainWindow):
 
         right_layout.addSpacing(SPACING_MD)
 
+        self._pipeline_progress = PipelineProgress()
+        right_layout.addWidget(self._pipeline_progress)
+
+        right_layout.addSpacing(SPACING_SM)
+
+        self._transcript_panel = TranscriptPanel()
+        right_layout.addWidget(self._transcript_panel)
+
+        right_layout.addSpacing(SPACING_MD)
+
         self._translate_btn = QPushButton("开始翻译")
         self._translate_btn.setObjectName("primaryButton")
         self._translate_btn.setEnabled(False)
@@ -144,6 +156,14 @@ class MainWindow(QMainWindow):
         self._signals.pipeline_finished.connect(self._on_pipeline_finished)
         self._signals.stage_failed.connect(self._on_stage_failed)
 
+        self._signals.stage_started.connect(self._pipeline_progress._on_stage_started)
+        self._signals.stage_progress.connect(self._pipeline_progress._on_stage_progress)
+        self._signals.stage_completed.connect(self._pipeline_progress._on_stage_completed)
+        self._signals.pipeline_finished.connect(self._pipeline_progress._on_pipeline_finished)
+        self._signals.tts_degraded.connect(self._pipeline_progress._on_tts_degraded)
+        self._signals.stage_failed.connect(self._pipeline_progress._on_stage_failed)
+        self._signals.transcript_updated.connect(self._transcript_panel._on_transcript_updated)
+
     def _on_video_loaded(self, path: Path) -> None:
         if not isinstance(path, Path):
             return
@@ -172,6 +192,8 @@ class MainWindow(QMainWindow):
         self._translate_btn.setText("翻译中...")
         self._translate_btn.setEnabled(False)
         self._config_panel.setEnabled(False)
+        self._pipeline_progress.reset()
+        self._transcript_panel.reset()
 
         self._pipeline = Pipeline(config, self._signals)
         try:
@@ -318,6 +340,11 @@ class MainWindow(QMainWindow):
             self.restoreState(state)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        """Qt 关闭事件重写：刷新待保存配置、停止校验定时器、持久化窗口几何信息。
+
+        Args:
+            event: Qt 关闭事件对象。
+        """
         self._translating = False
         try:
             if self._config_panel._save_timer.isActive():
@@ -338,4 +365,5 @@ class MainWindow(QMainWindow):
         return self._config_panel.get_config()
 
     def refresh_schemes(self) -> None:
+        """委托 ConfigPanel 刷新已保存方案下拉框。"""
         self._config_panel.refresh_schemes()

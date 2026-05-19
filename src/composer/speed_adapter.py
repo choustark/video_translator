@@ -26,6 +26,23 @@ class SpeedAdapter:
         temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
     ) -> list[SubtitleSegment]:
+        """将每段中文配音的时长对齐到原始英文字幕的时间窗口。
+
+        对于时长短于目标窗口的音频，使用 ffmpeg apad 填充静音；
+        对于时长超出的音频，使用 ffmpeg atempo 加速，但当加速比超过 1.5x 时
+        跳过加速并保留原始音频。对齐后检测单段偏差（>15%）和全局偏差（>10%）。
+
+        Args:
+            segments: 字幕段落列表，每段需包含 audio_path 和 audio_duration。
+            temp_dir: 临时目录，对齐后的音频将写入其 ``aligned`` 子目录。
+            progress_callback: 可选的进度回调，每完成一段触发一次。
+
+        Returns:
+            更新了 audio_path 的字幕段落列表（原地修改后返回）。
+
+        Raises:
+            PipelineError: ffmpeg 执行失败、超时或未安装时抛出。
+        """
         total = len(segments)
         if total == 0:
             return segments

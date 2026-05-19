@@ -3,7 +3,7 @@
   "model_path": "models/asr/whisper-medium"
   "language": "en"
 "translation":
-  "engine": "deepseek"
+  "engine": "nllb"
   "api_key": "a211927317d94995bcb7c718816d9304.xxxxxxx"
   "model": "glm-4-flash"
   "source_lang": "EN"

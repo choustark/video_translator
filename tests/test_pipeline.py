@@ -205,6 +205,8 @@ class TestProcess:
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
             patch("src.composer.speed_adapter.SpeedAdapter") as mock_adapter_cls,
+            patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
+            patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
@@ -216,6 +218,18 @@ class TestProcess:
             mock_adapter = MagicMock()
             mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
             mock_adapter_cls.return_value = mock_adapter
+            mock_srt = MagicMock()
+            mock_srt.generate_srt.side_effect = lambda segs, path: (
+                path.parent.mkdir(parents=True, exist_ok=True),
+                path.write_text("1\n00:00:00,000 --> 00:00:01,000\n你好\n", encoding="utf-8"),
+                path,
+            )[-1]
+            mock_srt_cls.return_value = mock_srt
+            mock_ffmpeg = MagicMock()
+            mock_ffmpeg.get_video_duration.return_value = 10.0
+            mock_ffmpeg.compose_chinese_audio.return_value = tmp_path / "output" / "audio.wav"
+            mock_ffmpeg.compose_video.return_value = tmp_path / "output" / "out.mp4"
+            mock_ffmpeg_cls.return_value = mock_ffmpeg
             result = pipeline.process(video, output_dir)
 
         assert result.success is True
@@ -293,6 +307,8 @@ class TestStart:
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
             patch("src.composer.speed_adapter.SpeedAdapter") as mock_adapter_cls,
+            patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
+            patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
@@ -304,6 +320,18 @@ class TestStart:
             mock_adapter = MagicMock()
             mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
             mock_adapter_cls.return_value = mock_adapter
+            mock_srt = MagicMock()
+            mock_srt.generate_srt.side_effect = lambda segs, path: (
+                path.parent.mkdir(parents=True, exist_ok=True),
+                path.write_text("1\n00:00:00,000 --> 00:00:01,000\n你好\n", encoding="utf-8"),
+                path,
+            )[-1]
+            mock_srt_cls.return_value = mock_srt
+            mock_ffmpeg = MagicMock()
+            mock_ffmpeg.get_video_duration.return_value = 10.0
+            mock_ffmpeg.compose_chinese_audio.return_value = tmp_path / "output" / "audio.wav"
+            mock_ffmpeg.compose_video.return_value = tmp_path / "output" / "out.mp4"
+            mock_ffmpeg_cls.return_value = mock_ffmpeg
             pipeline.start(video, output_dir)
             import time
 
@@ -599,3 +627,92 @@ class TestRunAlignment:
 
         assert len(progress_events) == 1
         assert progress_events[0] == ("语速自适应", 1.0)
+
+
+class TestRunCompose:
+    def test_compose_calls_three_steps(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=2.0,
+            source_text="Hello", translated_text="你好",
+            audio_path=temp_dir / "aligned" / "0000.wav",
+            audio_duration=2.0,
+        )]
+
+        with (
+            patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
+            patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
+        ):
+            mock_srt = MagicMock()
+            mock_srt.generate_srt.side_effect = lambda segs, path: (
+                path.parent.mkdir(parents=True, exist_ok=True),
+                path.write_text("1\n00:00:00,000 --> 00:00:02,000\n你好\n", encoding="utf-8"),
+                path,
+            )[-1]
+            mock_srt_cls.return_value = mock_srt
+
+            mock_ffmpeg = MagicMock()
+            mock_ffmpeg.get_video_duration.return_value = 10.0
+            mock_ffmpeg.compose_chinese_audio.return_value = output_dir / "input_chinese_audio.wav"
+            mock_ffmpeg.compose_video.return_value = output_dir / "input_translated.mp4"
+            mock_ffmpeg_cls.return_value = mock_ffmpeg
+
+            result = pipeline._compose(video, segments, temp_dir, output_dir)
+
+        assert result == output_dir / "input_translated.mp4"
+        mock_srt.generate_srt.assert_called_once()
+        mock_ffmpeg.get_video_duration.assert_called_once_with(video)
+        mock_ffmpeg.compose_chinese_audio.assert_called_once()
+        mock_ffmpeg.compose_video.assert_called_once()
+
+    def test_compose_emits_progress(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=2.0,
+            source_text="Hello", translated_text="你好",
+            audio_path=temp_dir / "aligned" / "0000.wav",
+            audio_duration=2.0,
+        )]
+
+        progress_events: list[tuple[str, float]] = []
+        pipeline.signals.stage_progress.connect(
+            lambda name, pct: progress_events.append((name, pct)),
+        )
+
+        with (
+            patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
+            patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
+        ):
+            mock_srt = MagicMock()
+            mock_srt.generate_srt.side_effect = lambda segs, path: (
+                path.parent.mkdir(parents=True, exist_ok=True),
+                path.write_text("1\n00:00:00,000 --> 00:00:02,000\n你好\n", encoding="utf-8"),
+                path,
+            )[-1]
+            mock_srt_cls.return_value = mock_srt
+
+            mock_ffmpeg = MagicMock()
+            mock_ffmpeg.get_video_duration.return_value = 10.0
+            mock_ffmpeg.compose_chinese_audio.return_value = output_dir / "audio.wav"
+            mock_ffmpeg.compose_video.return_value = output_dir / "out.mp4"
+            mock_ffmpeg_cls.return_value = mock_ffmpeg
+
+            pipeline._compose(video, segments, temp_dir, output_dir)
+
+        compose_events = [(n, p) for n, p in progress_events if n == "合成"]
+        assert len(compose_events) == 3
+        assert compose_events[0] == ("合成", 0.33)
+        assert compose_events[1] == ("合成", 0.67)
+        assert compose_events[2] == ("合成", 1.0)

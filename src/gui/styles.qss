@@ -277,3 +277,11 @@ QScrollBar::add-page:horizontal,
 QScrollBar::sub-page:horizontal {
     background: transparent;
 }
+
+/* ---- PipelineProgress 阶段行 ---- */
+QLabel#stageIcon { font-size: 11pt; }
+QLabel#stageName { font-size: 11pt; color: #1D1D1F; }
+QLabel#stageProgress { font-size: 10pt; color: #007AFF; }
+QLabel#stageTime { font-size: 10pt; color: #86868B; }
+QLabel#stageSummary { font-size: 11pt; font-weight: bold; color: #34C759; padding: 4px 0; }
+QLabel#stageWarning { font-size: 10pt; color: #FF9500; }

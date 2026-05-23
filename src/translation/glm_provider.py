@@ -13,7 +13,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.config import TranslationConfig
+from src.config import CHARS_PER_SEC, TranslationConfig
 from src.exceptions import PipelineError
 from src.models import ProgressEvent, SubtitleSegment
 from src.translation.base import TranslationProvider
@@ -68,36 +68,44 @@ class GLMProvider(TranslationProvider):
         Raises:
             PipelineError: API 调用失败（重试耗尽、4xx 错误、返回格式异常等）。
         """
-        total = len(segments)
-        if total == 0:
+        processable = [seg for seg in segments if seg.source_text.strip()]
+        processable_total = len(processable)
+        if not processable:
             return segments
 
         self._progress_callback = progress_callback
-        self._total_segments = total
+        self._total_segments = processable_total
 
+        processed = 0
         for i, seg in enumerate(segments):
             if not seg.source_text.strip():
                 continue
-            self._current_segment_idx = i
-            seg.translated_text = self._translate_segment(seg.source_text)
+            self._current_segment_idx = processed
+            processed += 1
+            seg.translated_text = self._translate_segment(
+                seg.source_text, seg.end_time - seg.start_time,
+            )
             if progress_callback:
                 progress_callback(ProgressEvent(
                     stage="翻译",
-                    progress=(i + 1) / total,
-                    message=f"正在翻译 {i + 1}/{total}",
+                    progress=processed / processable_total,
+                    message=f"正在翻译 {processed}/{processable_total}",
                 ))
 
-        # Ensure progress reaches 1.0 even when trailing segments are empty
+        skipped = len(segments) - processable_total
+        summary = f"翻译完成 {processable_total}/{processable_total}"
+        if skipped:
+            summary += f"（跳过 {skipped} 段）"
         if progress_callback:
             progress_callback(ProgressEvent(
-                stage="翻译", progress=1.0, message=f"翻译完成 {total}/{total}",
+                stage="翻译", progress=1.0, message=summary,
             ))
 
         return segments
 
-    def _translate_segment(self, text: str) -> str:
+    def _translate_segment(self, text: str, duration: float = 0.0) -> str:
         try:
-            return self._do_api_call(text)
+            return self._do_api_call(text, duration)
         except RetryError as e:
             raise PipelineError(
                 f"翻译 API 调用失败（已重试 3 次）: {e.last_attempt.exception()}",
@@ -124,7 +132,7 @@ class GLMProvider(TranslationProvider):
             message=f"正在重试 ({attempt}/3)...",
         ))
 
-    def _do_api_call(self, text: str) -> str:
+    def _do_api_call(self, text: str, duration: float = 0.0) -> str:
         retrying = Retrying(
             stop=stop_after_attempt(3),
             wait=wait_exponential(min=1, max=10),
@@ -133,9 +141,17 @@ class GLMProvider(TranslationProvider):
             ),
             before_sleep=self._retry_before_sleep,
         )
-        return retrying(self._execute_api_request, text)
+        return retrying(self._execute_api_request, text, duration)
 
-    def _execute_api_request(self, text: str) -> str:
+    def _execute_api_request(self, text: str, duration: float = 0.0) -> str:
+        user_content = text
+        if duration > 0:
+            target_chars = round(duration * CHARS_PER_SEC)
+            user_content = (
+                f"原文朗读时长约 {duration:.1f} 秒，"
+                f"中文口语语速约 {CHARS_PER_SEC:.0f} 字/秒，"
+                f"请控制译文在 {target_chars} 字左右。\n\n{text}"
+            )
         response = self.client.post(
             _API_URL,
             headers={
@@ -146,7 +162,7 @@ class GLMProvider(TranslationProvider):
                 "model": self.config.model,
                 "messages": [
                     {"role": "system", "content": _TRANSLATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": text},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.3,
             },

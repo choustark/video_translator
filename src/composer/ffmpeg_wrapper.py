@@ -4,6 +4,7 @@ import logging
 import subprocess
 from pathlib import Path
 
+from src.config import SUBTITLE_STYLES
 from src.exceptions import PipelineError
 from src.models import SubtitleSegment
 
@@ -108,14 +109,17 @@ class FFmpegWrapper:
         audio_path: Path,
         srt_path: Path,
         output_path: Path,
+        style_name: str = "classic_white",
     ) -> Path:
-        """合成最终视频：替换原音轨为中文配音 + 烧录硬字幕。"""
+        force_style = SUBTITLE_STYLES.get(style_name)
+        if not force_style:
+            logger.warning("未知字幕样式 '%s'，降级使用 classic_white", style_name)
+            force_style = SUBTITLE_STYLES["classic_white"]
 
         escaped_srt = str(srt_path).replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
         subtitle_filter = (
             f"subtitles='{escaped_srt}'"
-            ":force_style='FontSize=20,PrimaryColour=&Hffffff&,"
-            "OutlineColour=&H40000000,BorderStyle=1,Outline=2,Alignment=2'"
+            f":force_style='{force_style}'"
         )
         cmd = [
             "ffmpeg", "-y",
@@ -125,6 +129,8 @@ class FFmpegWrapper:
             "-map", "0:v", "-map", "1:a",
             "-c:v", "libx264", "-preset", "medium", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
+            # 以最短流为准结束编码，防止音频比视频长时 ffmpeg 挂起
+            "-shortest",
             str(output_path),
         ]
         self._run_ffmpeg(cmd, timeout=300)

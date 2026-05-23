@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import Callable
 
 import edge_tts
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from src.config import CHARS_PER_SEC
 from src.exceptions import PipelineError
 from src.models import ProgressEvent, SubtitleSegment
 from src.tts.base import TTSEngine
@@ -17,6 +19,8 @@ _VOICE_MAP: dict[str, str] = {
     "default": "zh-CN-YunxiNeural",
 }
 
+_MAX_RATE_OFFSET = 50
+
 
 class EdgeTTSEngine(TTSEngine):
     def synthesize(
@@ -24,6 +28,7 @@ class EdgeTTSEngine(TTSEngine):
         segments: list[SubtitleSegment],
         temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
+        process_registry: list[subprocess.Popen[bytes]] | None = None,
     ) -> list[SubtitleSegment]:
         """使用 Edge-TTS 将翻译后的字幕段落合成为 MP3 语音文件。
 
@@ -45,16 +50,21 @@ class EdgeTTSEngine(TTSEngine):
         if total == 0:
             return segments
 
+        processable = [seg for seg in segments if seg.translated_text.strip()]
+        processable_total = len(processable)
+
         voice = _VOICE_MAP.get(self.config.voice, self.config.voice)
-        rate_str = f"{int(self.config.speed * 100 - 100):+d}%"
+        base_rate_str = f"{int(self.config.speed * 100 - 100):+d}%"
         segments_dir = temp_dir / "segments"
         segments_dir.mkdir(parents=True, exist_ok=True)
 
-        for i, seg in enumerate(segments):
-            if not seg.translated_text.strip():
-                continue
+        processed = 0
+        for seg in processable:
+            processed += 1
 
             output_path = segments_dir / f"{seg.index:04d}.mp3"
+            target_duration = seg.end_time - seg.start_time
+            rate_str = self._compute_rate(seg.translated_text, target_duration, base_rate_str)
             self._synthesize_segment(seg.translated_text, voice, rate_str, output_path)
 
             seg.audio_path = output_path
@@ -63,16 +73,32 @@ class EdgeTTSEngine(TTSEngine):
             if progress_callback:
                 progress_callback(ProgressEvent(
                     stage="TTS",
-                    progress=(i + 1) / total,
-                    message=f"正在合成 {i + 1}/{total}",
+                    progress=processed / processable_total,
+                    message=f"正在合成 {processed}/{processable_total}",
                 ))
 
+        skipped = total - processable_total
+        summary = f"合成完成 {processable_total}/{processable_total}"
+        if skipped:
+            summary += f"（跳过 {skipped} 段）"
         if progress_callback:
             progress_callback(ProgressEvent(
-                stage="TTS", progress=1.0, message=f"合成完成 {total}/{total}",
+                stage="TTS", progress=1.0, message=summary,
             ))
 
         return segments
+
+    def _compute_rate(self, text: str, target_duration: float, base_rate_str: str) -> str:
+        char_count = len(text)
+        if char_count < 4 or target_duration <= 0.5:
+            return base_rate_str
+
+        target_speed = char_count / target_duration
+        offset = round((target_speed / CHARS_PER_SEC - 1) * 100)
+        offset = max(-_MAX_RATE_OFFSET, min(_MAX_RATE_OFFSET, offset))
+        if offset == 0:
+            return base_rate_str
+        return f"{offset:+d}%"
 
     def _synthesize_segment(
         self, text: str, voice: str, rate: str, output_path: Path,

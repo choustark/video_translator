@@ -124,7 +124,8 @@ class TestGLMProviderTranslate:
         body = call_kwargs.kwargs["json"]
         assert body["model"] == "glm-4-flash"
         assert body["temperature"] == 0.3
-        assert body["messages"][1]["content"] == "Hello world"
+        assert body["messages"][1]["content"].endswith("Hello world")
+        assert "原文朗读时长" in body["messages"][1]["content"]
 
     def test_empty_last_segment_progress_reaches_one(self) -> None:
         mock_client = MagicMock()

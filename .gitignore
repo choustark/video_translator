@@ -22,6 +22,7 @@ output/*
 logs/*
 !logs/.gitkeep
 /temp
+/output
 
 # Environment
 .env

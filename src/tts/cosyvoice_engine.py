@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-import importlib.util
+import json
 import logging
+import os
+import subprocess
+import threading
 from pathlib import Path
-from typing import Callable
+from typing import IO, Callable
 
 from src.exceptions import PipelineError
 from src.models import ProgressEvent, SubtitleSegment
 from src.tts.base import TTSEngine
 
 logger = logging.getLogger("video_translator")
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_WORKER_SCRIPT = _PROJECT_ROOT / "scripts" / "cosyvoice_worker.py"
+
+_VOICE_MAP: dict[str, str] = {
+    "default": "中文女",
+}
 
 
 class CosyVoiceEngine(TTSEngine):
@@ -18,34 +28,204 @@ class CosyVoiceEngine(TTSEngine):
         segments: list[SubtitleSegment],
         temp_dir: Path,
         progress_callback: Callable[[ProgressEvent], None] | None = None,
+        process_registry: list[subprocess.Popen[bytes]] | None = None,
     ) -> list[SubtitleSegment]:
-        """使用 CosyVoice 将翻译后的字幕段落合成为语音文件。
+        python_path, source_path = self._resolve_paths()
+        speaker = _VOICE_MAP.get(self.config.voice, self.config.voice)
+        segments_dir = temp_dir / "segments"
+        segments_dir.mkdir(parents=True, exist_ok=True)
 
-        尚未实现，保留接口占位。当前通过 importlib.util.find_spec 检测
-        CosyVoice 是否已安装，未安装时抛出 PipelineError 提示降级到 Edge-TTS；
-        已安装时同样抛出 PipelineError 提示功能尚未完成。
+        task_segments: list[dict[str, object]] = [
+            {
+                "index": seg.index,
+                "text": seg.translated_text,
+                "output_path": str(segments_dir / f"{seg.index:04d}.wav"),
+            }
+            for seg in segments
+            if seg.translated_text.strip()
+        ]
+        input_data: dict[str, object] = {
+            "model_path": self.config.model_path,
+            "speaker": speaker,
+            "speed": self.config.speed,
+            "segments": task_segments,
+        }
 
-        Args:
-            segments: 待合成的字幕段落列表。
-            temp_dir: 临时目录。
-            progress_callback: 可选的进度回调函数。
+        total = len(task_segments)
+        if total == 0:
+            return segments
 
-        Returns:
-            更新后的字幕段落列表（当前始终不会正常返回）。
+        env = self._build_env(source_path)
+        process = subprocess.Popen(
+            [str(python_path), str(_WORKER_SCRIPT)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+        )
+        if process_registry is not None:
+            process_registry.append(process)
 
-        Raises:
-            PipelineError: CosyVoice 未安装或完整合成尚未实现时抛出。
-        """
-        if importlib.util.find_spec("cosyvoice") is None:
-            logger.warning("TTS | CosyVoice 未安装，降级到 Edge-TTS")
-            raise PipelineError(
-                "CosyVoice 未安装，已降级到 Edge-TTS",
-                stage="TTS",
-                suggestion="安装 CosyVoice 或使用 Edge-TTS 引擎",
+        stdin = process.stdin
+        assert stdin is not None
+        stdin.write(json.dumps(input_data, ensure_ascii=False).encode("utf-8"))
+        stdin.close()
+
+        stderr_chunks: list[bytes] = []
+        stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            args=(process.stderr, stderr_chunks),
+            daemon=True,
+        )
+        stderr_thread.start()
+
+        results = self._read_results(process, total, progress_callback)
+
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            logger.warning("CosyVoice worker 超时（30秒），强制终止")
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except OSError:
+                pass
+            if process_registry is not None and process in process_registry:
+                process_registry.remove(process)
+            raise ImportError(
+                "CosyVoice worker 超时（30秒），已强制终止"
             )
 
-        raise PipelineError(
-            "CosyVoice 完整合成尚未实现（v1 降级存根）",
-            stage="TTS",
-            suggestion="请使用 Edge-TTS 引擎，或等待 CosyVoice 完整支持",
-        )
+        stderr_thread.join(timeout=5)
+
+        if process.returncode != 0:
+            stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+            raise ImportError(
+                f"CosyVoice worker 异常退出 (code={process.returncode}): {stderr_text[:500]}"
+            )
+
+        self._apply_results(results, segments, segments_dir)
+
+        if process_registry is not None and process in process_registry:
+            process_registry.remove(process)
+
+        if progress_callback:
+            progress_callback(
+                ProgressEvent(
+                    stage="TTS",
+                    progress=1.0,
+                    message=f"合成完成 {total}/{total}",
+                )
+            )
+
+        return segments
+
+    def _resolve_paths(self) -> tuple[Path, Path]:
+        conda = self.config.conda_python_path
+        source = self.config.cosyvoice_source_path
+        python_path = Path(conda) if conda else None
+        source_path = Path(source) if source else None
+
+        if not python_path or not python_path.is_file():
+            raise ImportError(
+                f"conda Python 未找到: {python_path}。请在 config.yaml 中设置 tts.conda_python_path"
+            )
+        if not source_path or not source_path.is_dir():
+            raise ImportError(
+                f"CosyVoice 源码目录未找到: {source_path}。"
+                "请在 config.yaml 中设置 tts.cosyvoice_source_path"
+            )
+        if not _WORKER_SCRIPT.is_file():
+            raise ImportError(f"Worker 脚本未找到: {_WORKER_SCRIPT}")
+
+        return python_path, source_path
+
+    @staticmethod
+    def _build_env(source_path: Path) -> dict[str, str]:
+        env = os.environ.copy()
+        pythonpath_parts = [
+            str(source_path / "third_party" / "Matcha-TTS"),
+            str(source_path),
+        ]
+        existing = env.get("PYTHONPATH", "")
+        if existing:
+            pythonpath_parts.append(existing)
+        env["PYTHONPATH"] = ":".join(pythonpath_parts)
+        env["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        return env
+
+    @staticmethod
+    def _drain_stderr(stderr: IO[bytes], chunks: list[bytes]) -> None:
+        try:
+            for line in stderr:
+                chunks.append(line)
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.info("CosyVoice worker | %s", text)
+        except (ValueError, OSError):
+            pass
+
+    @staticmethod
+    def _read_results(
+        process: subprocess.Popen,
+        total: int,
+        progress_callback: Callable[[ProgressEvent], None] | None,
+    ) -> dict[int, dict]:
+        results: dict[int, dict] = {}
+        stdout = process.stdout
+        assert stdout is not None  # PIPE 保证非 None
+        for line in stdout:
+            try:
+                data = json.loads(line.decode("utf-8").strip())
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+
+            msg_type = data.get("type")
+            if msg_type == "result":
+                idx = data["index"]
+                results[idx] = data
+                if data.get("status") == "error":
+                    logger.warning("TTS | 段 %d 失败 | %s", idx, data.get("error", ""))
+                if progress_callback:
+                    done = len(results)
+                    progress_callback(
+                        ProgressEvent(
+                            stage="TTS",
+                            progress=done / total,
+                            message=f"正在合成 {done}/{total}",
+                        )
+                    )
+            elif msg_type == "error":
+                raise ImportError(f"CosyVoice worker 错误: {data.get('message', '')}")
+        return results
+
+    @staticmethod
+    def _apply_results(
+        results: dict[int, dict],
+        segments: list[SubtitleSegment],
+        segments_dir: Path,
+    ) -> None:
+        errors: list[str] = []
+        for seg in segments:
+            if not seg.translated_text.strip():
+                continue
+            result = results.get(seg.index)
+            if result is None:
+                errors.append(f"段 {seg.index} 无合成结果")
+                continue
+            if result["status"] == "error":
+                errors.append(f"段 {seg.index}: {result.get('error', '未知错误')}")
+                continue
+            if result["status"] == "ok":
+                audio_path = segments_dir / f"{seg.index:04d}.wav"
+                seg.audio_path = audio_path
+                seg.audio_duration = result["duration"]
+
+        if errors:
+            raise PipelineError(
+                f"CosyVoice 部分段合成失败: {'; '.join(errors[:5])}",
+                stage="TTS",
+                suggestion="将自动降级到 Edge-TTS",
+            )

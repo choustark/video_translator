@@ -201,26 +201,26 @@ class TestDropEventFormatValidation:
 
 
 class TestDropEventDurationValidation:
-    """时长校验测试 — 超过 10 分钟拒绝"""
+    """时长校验测试 — 超过 30 分钟拒绝"""
 
     def test_rejects_duration_exceeds_limit(self, qapp) -> None:
-        """超过 600 秒的视频触发 error 状态"""
-        with _mock_ffprobe(700.0):
+        """超过 1800 秒的视频触发 error 状态"""
+        with _mock_ffprobe(1900.0):
             area = VideoDropArea()
             area.dropEvent(_make_mock_drop("/test/video.mp4"))
 
-            assert "视频时长超过 10 分钟" in area._hint_label.text()
+            assert "视频时长超过 30 分钟" in area._hint_label.text()
             assert area.video_path is None
 
     def test_accepts_duration_at_limit(self, qapp) -> None:
-        """恰好 600 秒的视频接受"""
-        with _mock_ffprobe(600.0):
+        """恰好 1800 秒的视频接受"""
+        with _mock_ffprobe(1800.0):
             area = VideoDropArea()
             area.dropEvent(_make_mock_drop("/test/video.mp4"))
 
             assert area.video_path is not None
             assert area.video_info is not None
-            assert area.video_info["duration"] == "10:00"
+            assert area.video_info["duration"] == "30:00"
 
     def test_accepts_duration_under_limit(self, qapp) -> None:
         """600 秒以内的视频正常加载"""

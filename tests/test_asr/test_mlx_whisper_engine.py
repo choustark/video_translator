@@ -5,10 +5,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asr.mlx_whisper_engine import _ASR_MEMORY_REQUIREMENT_GB, MLXWhisperEngine
+from src.asr.mlx_whisper_engine import (
+    _DEFAULT_PROPER_NOUNS,
+    MLXWhisperEngine,
+    _apply_proper_noun_replacements,
+    _build_initial_prompt,
+    _merge_short_segments,
+)
 from src.config import ASRConfig
 from src.exceptions import PipelineError
-from src.models import ProgressEvent
+from src.models import ProgressEvent, SubtitleSegment
+
+_ASR_MEMORY_REQUIREMENT_GB = 6.0
 
 
 def _make_config() -> ASRConfig:
@@ -94,13 +102,39 @@ class TestTranscribe:
             )
             engine.transcribe("/tmp/audio.wav")
 
+        expected_prompt = _build_initial_prompt(_DEFAULT_PROPER_NOUNS)
         mock_mlx.transcribe.assert_called_once_with(
             "/tmp/audio.wav",
             path_or_hf_repo=config.model_path,
             language=config.language,
             word_timestamps=True,
             verbose=False,
+            initial_prompt=expected_prompt,
         )
+
+    def test_includes_custom_proper_nouns_in_prompt(self) -> None:
+        config = ASRConfig(
+            engine="mlx-whisper",
+            model_path="models/asr/test",
+            proper_nouns=["MyCustomTool"],
+        )
+        engine = MLXWhisperEngine(config)
+        mock_mlx = _mock_mlx_whisper()
+        mock_mlx.transcribe.return_value = {"text": "", "segments": []}
+
+        with (
+            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=_ASR_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+            )
+            engine.transcribe("/tmp/audio.wav")
+
+        call_kwargs = mock_mlx.transcribe.call_args
+        prompt = call_kwargs.kwargs.get("initial_prompt", call_kwargs[1].get("initial_prompt", ""))
+        assert "MyCustomTool" in prompt
 
 
 class TestMemoryCheck:
@@ -263,3 +297,190 @@ class TestGCRelease:
             engine.transcribe("/tmp/audio.wav")
 
         mock_gc.collect.assert_called_once()
+
+    def test_clears_mlx_cache_when_available(self) -> None:
+        mock_mx = MagicMock()
+        mock_mx.get_active_memory.return_value = 100 * 1024 * 1024
+        mock_mx.get_cache_memory.return_value = 500 * 1024 * 1024
+
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        mock_mlx.transcribe.return_value = {"text": "", "segments": []}
+
+        with (
+            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {
+                "mlx_whisper": mock_mlx,
+                "mlx.core": mock_mx,
+            }),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024 ** 3,
+            )
+            engine.transcribe("/tmp/audio.wav")
+
+        mock_mx.synchronize.assert_called_once()
+        mock_mx.clear_cache.assert_called_once()
+
+    def test_mlx_cache_exception_does_not_fail_transcribe(self) -> None:
+        mock_mx = MagicMock()
+        mock_mx.synchronize.side_effect = RuntimeError("Metal error")
+
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        mock_mlx.transcribe.return_value = {"text": "", "segments": []}
+
+        with (
+            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {
+                "mlx_whisper": mock_mlx,
+                "mlx.core": mock_mx,
+            }),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024 ** 3,
+            )
+            segments = engine.transcribe("/tmp/audio.wav")
+
+        assert segments == []
+
+
+class TestBuildInitialPrompt:
+    def test_joins_nouns_with_period(self) -> None:
+        prompt = _build_initial_prompt(["Claude Code", "GPT-4"])
+        assert prompt == "Claude Code GPT-4."
+
+    def test_empty_nouns(self) -> None:
+        prompt = _build_initial_prompt([])
+        assert prompt == "."
+
+
+class TestProperNounReplacement:
+    def _make_segments(self, texts: list[str]) -> list[SubtitleSegment]:
+        return [
+            SubtitleSegment(index=i, start_time=float(i), end_time=float(i + 1), source_text=t)
+            for i, t in enumerate(texts)
+        ]
+
+    def test_replaces_close_match(self) -> None:
+        segs = self._make_segments(["I use cloud code daily."])
+        nouns = ["Claude Code"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert "Claude Code" in result[0].source_text
+        assert "cloud code" not in result[0].source_text
+
+    def test_no_replacement_when_exact_match(self) -> None:
+        segs = self._make_segments(["Claude Code is great."])
+        nouns = ["Claude Code"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert result[0].source_text == "Claude Code is great."
+
+    def test_no_replacement_unrelated_text(self) -> None:
+        segs = self._make_segments(["The weather is nice."])
+        nouns = ["Claude Code"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert result[0].source_text == "The weather is nice."
+
+    def test_empty_nouns_no_change(self) -> None:
+        segs = self._make_segments(["Some text."])
+        result = _apply_proper_noun_replacements(segs, [])
+        assert result[0].source_text == "Some text."
+
+    def test_replacement_preserves_punctuation(self) -> None:
+        segs = self._make_segments(["I love quad code."])
+        nouns = ["Claude Code"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert result[0].source_text.endswith(".")
+
+    def test_replaces_case_insensitive(self) -> None:
+        segs = self._make_segments(["claude code is great."])
+        nouns = ["Claude Code"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert result[0].source_text == "Claude Code is great."
+
+    def test_multiple_nouns_in_segment(self) -> None:
+        segs = self._make_segments(["cloud code and apple silicon are cool."])
+        nouns = ["Claude Code", "Apple Silicon"]
+        result = _apply_proper_noun_replacements(segs, nouns)
+        assert "Claude Code" in result[0].source_text
+        assert "Apple Silicon" in result[0].source_text
+
+
+class TestMergeShortSegments:
+    def _make_timed_segments(
+        self, specs: list[tuple[float, float, str]],
+    ) -> list[SubtitleSegment]:
+        return [
+            SubtitleSegment(index=i, start_time=start, end_time=end, source_text=text)
+            for i, (start, end, text) in enumerate(specs)
+        ]
+
+    def test_merges_short_segment_into_previous(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 3.0, "Hello world."),
+            (3.0, 3.3, "代码。"),
+            (3.3, 6.0, "Next sentence."),
+        ])
+        result = _merge_short_segments(segs)
+        assert len(result) == 2
+        assert "代码。" in result[0].source_text
+        assert result[0].end_time == 3.3
+
+    def test_merges_consecutive_short_segments(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 3.0, "Hello."),
+            (3.0, 3.2, "A."),
+            (3.2, 3.4, "B."),
+            (3.4, 6.0, "Done."),
+        ])
+        result = _merge_short_segments(segs)
+        assert len(result) == 2
+        assert "A." in result[0].source_text
+        assert "B." in result[0].source_text
+
+    def test_preserves_normal_segments(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 2.5, "Hello world."),
+            (2.5, 5.0, "This is a test."),
+        ])
+        result = _merge_short_segments(segs)
+        assert len(result) == 2
+
+    def test_last_short_segment_preserved(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 3.0, "Main text."),
+            (3.0, 3.3, "End."),
+        ])
+        result = _merge_short_segments(segs)
+        assert len(result) == 2
+        assert result[1].source_text == "End."
+
+    def test_last_segment_above_threshold_kept(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 3.0, "Main text."),
+            (3.0, 4.5, "Last one."),
+        ])
+        result = _merge_short_segments(segs)
+        assert len(result) == 2
+
+    def test_empty_input(self) -> None:
+        assert _merge_short_segments([]) == []
+
+    def test_single_segment(self) -> None:
+        segs = self._make_timed_segments([(0.0, 2.0, "One.")])
+        result = _merge_short_segments(segs)
+        assert len(result) == 1
+
+    def test_reindexes_merged_output(self) -> None:
+        segs = self._make_timed_segments([
+            (0.0, 3.0, "A."),
+            (3.0, 3.3, "b."),
+            (3.3, 6.0, "C."),
+            (6.0, 6.2, "d."),
+            (6.2, 9.0, "E."),
+        ])
+        result = _merge_short_segments(segs)
+        for idx, seg in enumerate(result):
+            assert seg.index == idx

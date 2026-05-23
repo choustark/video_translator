@@ -21,9 +21,9 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import (
-    PRESETS,
     AppConfig,
     ASRConfig,
+    SubtitleConfig,
     TranslationConfig,
     TTSConfig,
     get_preset,
@@ -53,8 +53,18 @@ _PRESET_DISPLAY: dict[str, str] = {
     "balanced": "均衡",
     "fast": "快速",
     "offline": "全离线",
+    "custom": "自定义",
 }
 _PRESET_KEYS: dict[str, str] = {v: k for k, v in _PRESET_DISPLAY.items()}
+
+_CUSTOM_KEY = "custom"
+
+_PRESET_RESOURCE: dict[str, tuple[str, str]] = {
+    "high_quality": ("≈7GB", "≈3GB"),
+    "balanced": ("≈5.5GB", "≈1.5GB"),
+    "fast": ("≈0.5GB", "≈0.3GB"),
+    "offline": ("≈8GB", "≈5GB"),
+}
 
 _TRANSLATION_DISPLAY: dict[str, str] = {
     "glm": "GLM",
@@ -64,6 +74,21 @@ _TRANSLATION_DISPLAY: dict[str, str] = {
     "nllb": "本地 NLLB",
 }
 _TRANSLATION_KEYS: dict[str, str] = {v: k for k, v in _TRANSLATION_DISPLAY.items()}
+
+_ASR_ENGINE_DISPLAY: dict[str, str] = {
+    "mlx-whisper": "mlx-whisper",
+    "faster-whisper": "faster-whisper",
+}
+_TTS_ENGINE_DISPLAY: dict[str, str] = {
+    "cosyvoice": "CosyVoice",
+    "edge-tts": "Edge-TTS",
+}
+
+_SUBTITLE_STYLE_DISPLAY: dict[str, str] = {
+    "classic_white": "经典白字",
+    "yellow_black": "黄字黑底",
+    "white_clean": "白字无边",
+}
 
 _SCHEME_NAME_RE = re.compile(r'^[\w一-鿿-]+$')
 _SCHEMES_DIR = Path.home() / ".video_translator" / "schemes"
@@ -83,8 +108,10 @@ class ConfigPanel(QWidget):
     def __init__(self, config_path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config_path = config_path
+        self._file_config: AppConfig | None = None
         self._scheme_mgr = SchemeManager(_SCHEMES_DIR)
         self._video_path: Path | None = None
+        self._last_preset_key: str = "high_quality"
 
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -118,7 +145,24 @@ class ConfigPanel(QWidget):
         self._preset_combo = QComboBox()
         for key in _PRESET_DISPLAY:
             self._preset_combo.addItem(_PRESET_DISPLAY[key], key)
-        preset_form.addRow(self._field_label("预设方案"), self._preset_combo)
+        self._btn_restore_preset = QPushButton("恢复默认")
+        self._btn_restore_preset.setObjectName("inlineButton")
+        self._btn_restore_preset.setFixedWidth(70)
+        self._btn_restore_preset.setVisible(False)
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(SPACING_XS)
+        preset_row.addWidget(self._preset_combo, 1)
+        preset_row.addWidget(self._btn_restore_preset)
+        self._preset_info_label = QLabel()
+        self._preset_info_label.setFixedSize(16, 16)
+        self._preset_info_label.setToolTip(self._build_preset_tooltip("high_quality"))
+        style = QApplication.style()
+        pixmap = style.standardIcon(
+            QStyle.StandardPixmap.SP_MessageBoxInformation
+        ).pixmap(16, 16)
+        self._preset_info_label.setPixmap(pixmap)
+        preset_row.addWidget(self._preset_info_label)
+        preset_form.addRow(self._field_label("预设方案"), preset_row)
         layout.addLayout(preset_form)
 
         layout.addSpacing(SPACING_MD)
@@ -148,6 +192,11 @@ class ConfigPanel(QWidget):
         layout.addWidget(self._section_title("ASR 语音识别"))
         layout.addSpacing(SPACING_XS)
         asr_form = self._make_form()
+
+        self._asr_engine_combo = QComboBox()
+        for key, display in _ASR_ENGINE_DISPLAY.items():
+            self._asr_engine_combo.addItem(display, key)
+        asr_form.addRow(self._field_label("引擎类型"), self._asr_engine_combo)
 
         self._asr_path_input = QLineEdit()
         self._asr_path_input.setReadOnly(True)
@@ -199,6 +248,11 @@ class ConfigPanel(QWidget):
         layout.addSpacing(SPACING_XS)
         tts_form = self._make_form()
 
+        self._tts_engine_combo = QComboBox()
+        for key, display in _TTS_ENGINE_DISPLAY.items():
+            self._tts_engine_combo.addItem(display, key)
+        tts_form.addRow(self._field_label("引擎类型"), self._tts_engine_combo)
+
         self._tts_path_input = QLineEdit()
         self._tts_path_input.setReadOnly(True)
         self._tts_path_input.setPlaceholderText("选择模型目录...")
@@ -222,6 +276,11 @@ class ConfigPanel(QWidget):
         speed_row.addWidget(self._speed_slider)
         speed_row.addWidget(self._speed_label)
         tts_form.addRow(self._field_label("语速"), speed_row)
+
+        self._subtitle_style_combo = QComboBox()
+        for key, display in _SUBTITLE_STYLE_DISPLAY.items():
+            self._subtitle_style_combo.addItem(display, key)
+        tts_form.addRow(self._field_label("字幕样式"), self._subtitle_style_combo)
 
         layout.addLayout(tts_form)
 
@@ -271,11 +330,15 @@ class ConfigPanel(QWidget):
 
     def _connect_signals(self) -> None:
         self._preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        self._btn_restore_preset.clicked.connect(self._restore_preset)
+        self._asr_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._asr_path_input.textChanged.connect(self._on_config_changed)
         self._translation_combo.currentIndexChanged.connect(self._on_config_changed)
         self._api_key_input.textChanged.connect(self._on_config_changed)
+        self._tts_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._tts_path_input.textChanged.connect(self._on_config_changed)
         self._speed_slider.valueChanged.connect(self._on_speed_changed)
+        self._subtitle_style_combo.currentIndexChanged.connect(self._on_config_changed)
         self._scheme_combo.currentIndexChanged.connect(self._on_scheme_selected)
         self._btn_save_scheme.clicked.connect(self._save_current_scheme)
         self._btn_delete_scheme.clicked.connect(self._delete_selected_scheme)
@@ -288,26 +351,36 @@ class ConfigPanel(QWidget):
 
     def _on_preset_changed(self, _index: int) -> None:
         key = self._preset_combo.currentData()
-        if not key:
+        if not key or key == _CUSTOM_KEY:
             return
+        self._last_preset_key = key
         current_api_key = self._api_key_input.text()
         config = get_preset(key)
         self._fill_from_config(config)
         if current_api_key:
             self._api_key_input.setText(current_api_key)
+        self._btn_restore_preset.setVisible(False)
+        self._preset_info_label.setToolTip(self._build_preset_tooltip(key))
         self._on_config_changed()
 
     def _fill_from_config(self, config: AppConfig) -> None:
         self._preset_combo.blockSignals(True)
+        self._asr_engine_combo.blockSignals(True)
         self._asr_path_input.blockSignals(True)
         self._translation_combo.blockSignals(True)
         self._api_key_input.blockSignals(True)
+        self._tts_engine_combo.blockSignals(True)
         self._tts_path_input.blockSignals(True)
         self._speed_slider.blockSignals(True)
+        self._subtitle_style_combo.blockSignals(True)
 
         preset_idx = self._preset_combo.findData(config.preset)
         if preset_idx >= 0:
             self._preset_combo.setCurrentIndex(preset_idx)
+
+        asr_engine_idx = self._asr_engine_combo.findData(config.asr.engine)
+        if asr_engine_idx >= 0:
+            self._asr_engine_combo.setCurrentIndex(asr_engine_idx)
 
         self._asr_path_input.setText(config.asr.model_path)
 
@@ -316,20 +389,91 @@ class ConfigPanel(QWidget):
             self._translation_combo.setCurrentIndex(trans_idx)
 
         self._api_key_input.setText(config.translation.api_key)
+
+        tts_engine_idx = self._tts_engine_combo.findData(config.tts.engine)
+        if tts_engine_idx >= 0:
+            self._tts_engine_combo.setCurrentIndex(tts_engine_idx)
+
         self._tts_path_input.setText(config.tts.model_path)
         self._speed_slider.setValue(int(config.tts.speed * 10))
         self._speed_label.setText(f"{config.tts.speed:.1f}x")
 
+        style_idx = self._subtitle_style_combo.findData(config.subtitle.style)
+        if style_idx >= 0:
+            self._subtitle_style_combo.setCurrentIndex(style_idx)
+
         self._preset_combo.blockSignals(False)
+        self._asr_engine_combo.blockSignals(False)
         self._asr_path_input.blockSignals(False)
         self._translation_combo.blockSignals(False)
         self._api_key_input.blockSignals(False)
+        self._tts_engine_combo.blockSignals(False)
         self._tts_path_input.blockSignals(False)
         self._speed_slider.blockSignals(False)
+        self._subtitle_style_combo.blockSignals(False)
 
     def _on_config_changed(self) -> None:
+        self._detect_preset_drift()
         self._save_timer.start()
         self._schedule_validation()
+
+    @staticmethod
+    def _build_preset_tooltip(preset_key: str) -> str:
+        resource = _PRESET_RESOURCE.get(preset_key)
+        if not resource:
+            return ""
+        mem, disk = resource
+        return f"内存需求：{mem}（基于默认模型估算）\n模型文件：{disk}"
+
+    def _detect_preset_drift(self) -> None:
+        """检查当前配置是否偏离了上次选中的预设，若偏离则切换到"自定义"。"""
+        current_key = self._preset_combo.currentData()
+        if current_key == _CUSTOM_KEY:
+            return
+
+        preset = get_preset(self._last_preset_key)
+        if self._matches_preset(preset):
+            return
+
+        self._preset_combo.blockSignals(True)
+        idx = self._preset_combo.findData(_CUSTOM_KEY)
+        if idx >= 0:
+            self._preset_combo.setCurrentIndex(idx)
+        self._preset_combo.blockSignals(False)
+        self._btn_restore_preset.setVisible(True)
+
+    def _matches_preset(self, preset: AppConfig) -> bool:
+        if self._asr_engine_combo.currentData() != preset.asr.engine:
+            return False
+        if self._asr_path_input.text() != preset.asr.model_path:
+            return False
+        if self._translation_combo.currentData() != preset.translation.engine:
+            return False
+        if self._tts_engine_combo.currentData() != preset.tts.engine:
+            return False
+        if self._tts_path_input.text() != preset.tts.model_path:
+            return False
+        if abs(self._speed_slider.value() / 10 - preset.tts.speed) > 0.01:
+            return False
+        if self._subtitle_style_combo.currentData() != preset.subtitle.style:
+            return False
+        return True
+
+    def _restore_preset(self) -> None:
+        """恢复到上次选中的预设配置。"""
+        config = get_preset(self._last_preset_key)
+        current_api_key = self._api_key_input.text()
+        self._fill_from_config(config)
+        if current_api_key:
+            self._api_key_input.setText(current_api_key)
+
+        self._preset_combo.blockSignals(True)
+        idx = self._preset_combo.findData(self._last_preset_key)
+        if idx >= 0:
+            self._preset_combo.setCurrentIndex(idx)
+        self._preset_combo.blockSignals(False)
+        self._btn_restore_preset.setVisible(False)
+        self._on_config_changed()
 
     def _do_save(self) -> None:
         config = self._collect_config()
@@ -342,11 +486,20 @@ class ConfigPanel(QWidget):
             Literal["glm", "deepseek", "openai", "deepl", "nllb"],
             str(self._translation_combo.currentData() or "glm"),
         )
+        asr_engine = cast(
+            Literal["mlx-whisper", "faster-whisper", "whisper"],
+            str(self._asr_engine_combo.currentData() or "mlx-whisper"),
+        )
+        tts_engine = cast(
+            Literal["cosyvoice", "edge-tts"],
+            str(self._tts_engine_combo.currentData() or "cosyvoice"),
+        )
+        subtitle_style = str(self._subtitle_style_combo.currentData() or "classic_white")
         try:
             return AppConfig(
                 preset=preset_key,
                 asr=ASRConfig(
-                    engine=PRESETS[preset_key].asr.engine,
+                    engine=asr_engine,
                     model_path=self._asr_path_input.text(),
                     language="en",
                 ),
@@ -357,16 +510,24 @@ class ConfigPanel(QWidget):
                     target_lang="ZH",
                 ),
                 tts=TTSConfig(
-                    engine=PRESETS[preset_key].tts.engine,
+                    engine=tts_engine,
                     model_path=self._tts_path_input.text(),
                     voice="default",
                     speed=self._speed_slider.value() / 10,
+                    conda_python_path=self._file_cosyvoice_field("conda_python_path"),
+                    cosyvoice_source_path=self._file_cosyvoice_field("cosyvoice_source_path"),
                 ),
+                subtitle=SubtitleConfig(style=subtitle_style),
             )
         except Exception:
             return None
 
     # --- 校验反馈 ---
+
+    def _file_cosyvoice_field(self, field: str) -> str:
+        if self._file_config is not None:
+            return getattr(self._file_config.tts, field, "")
+        return ""
 
     def set_video_path(self, path: Path | None) -> None:
         """设置当前视频路径，供 MainWindow 在 video_loaded 时调用。"""
@@ -440,10 +601,6 @@ class ConfigPanel(QWidget):
             )
 
     def load_config(self) -> None:
-        """从配置文件加载配置并填充面板控件，刷新已保存方案列表。
-
-        如果配置文件不存在或加载失败，使用"高质量"预设作为默认值并写入文件。
-        """
         if self._config_path.exists():
             try:
                 config = load_config(self._config_path)
@@ -452,9 +609,15 @@ class ConfigPanel(QWidget):
         else:
             config = get_preset("high_quality")
             save_config(config, self._config_path)
+        self._file_config = config
+
+        if config.preset == _CUSTOM_KEY:
+            self._last_preset_key = "high_quality"
+        else:
+            self._last_preset_key = config.preset
+
         self._fill_from_config(config)
         self.refresh_schemes()
-        # 加载配置后触发首次校验
         self._schedule_validation()
 
     def get_config(self) -> AppConfig:

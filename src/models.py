@@ -14,6 +14,8 @@ class SubtitleSegment:
     translated_text: str = ""
     audio_path: Path = Path()
     audio_duration: float = 0.0
+    actual_start_time: float | None = None
+    actual_end_time: float | None = None
 
 
 class StageStatus(Enum):

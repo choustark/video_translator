@@ -316,17 +316,17 @@ class TestValidateVideoDuration:
         with patch("src.validators.subprocess.run", return_value=mock_result):
             validate_video_duration(Path("video.mp4"))
 
-    def test_passes_for_exactly_600_seconds(self) -> None:
+    def test_passes_for_exactly_1800_seconds(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "600.0\n"
+        mock_result.stdout = "1800.0\n"
         with patch("src.validators.subprocess.run", return_value=mock_result):
             validate_video_duration(Path("video.mp4"))
 
-    def test_fails_for_over_600_seconds(self) -> None:
+    def test_fails_for_over_1800_seconds(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "601.0\n"
+        mock_result.stdout = "1801.0\n"
         with (
             patch("src.validators.subprocess.run", return_value=mock_result),
             pytest.raises(ValidationError) as exc_info,
@@ -381,7 +381,7 @@ class TestValidateMemory:
         mock_vm = MagicMock()
         mock_vm.available = int(4 * 1024**3)
         with patch("src.validators.psutil.virtual_memory", return_value=mock_vm):
-            validate_memory()
+            validate_memory(3.0)
 
     def test_fails_when_insufficient_memory(self) -> None:
         mock_vm = MagicMock()

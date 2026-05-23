@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,7 +18,7 @@ def _make_config(tmp_path: Path) -> AppConfig:
     return AppConfig(
         asr=ASRConfig(engine="mlx-whisper", model_path="/asr"),
         translation=TranslationConfig(engine="glm"),
-        tts=TTSConfig(engine="cosyvoice"),
+        tts=TTSConfig(engine="cosyvoice", speed=1.0),
     )
 
 
@@ -213,10 +214,10 @@ class TestProcess:
             mock_provider.translate.side_effect = lambda segs, cb=None: segs
             mock_trans_factory.return_value = mock_provider
             mock_tts_engine = MagicMock()
-            mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None: segs
+            mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             mock_tts_factory.return_value = mock_tts_engine
             mock_adapter = MagicMock()
-            mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
+            mock_adapter.align.side_effect = lambda segs, td, cb=None, **kw: segs
             mock_adapter_cls.return_value = mock_adapter
             mock_srt = MagicMock()
             mock_srt.generate_srt.side_effect = lambda segs, path: (
@@ -282,6 +283,101 @@ class TestProcess:
         assert result.success is False
         assert failed[0][0] == "ASR"
 
+    def test_success_cleans_up_temp_dir(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """AC5: 管线成功完成后自动删除临时目录。"""
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake video content")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # 显式设置 event，避免依赖 preload 线程时序
+        pipeline._tts_ready_event.set()
+
+        captured_temp_dir: list[Path] = []
+        original_create = pipeline._create_temp_dir
+
+        def tracking_create(od: Path, vp: Path) -> Path:
+            td = original_create(od, vp)
+            captured_temp_dir.append(td)
+            return td
+
+        with (
+            caplog.at_level(logging.INFO, logger="video_translator"),
+            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.asr.create_asr_engine") as mock_asr_factory,
+            patch("src.translation.create_translation_provider") as mock_trans_factory,
+            patch("src.tts.create_tts_engine") as mock_tts_factory,
+            patch("src.composer.speed_adapter.SpeedAdapter") as mock_adapter_cls,
+            patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
+            patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
+            patch.object(pipeline, "_create_temp_dir", tracking_create),
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            mock_asr = MagicMock()
+            mock_asr.transcribe.return_value = [
+                SubtitleSegment(index=0, start_time=0.0, end_time=1.0, source_text="Hi"),
+            ]
+            mock_asr_factory.return_value = mock_asr
+            mock_provider = MagicMock()
+            mock_provider.translate.side_effect = lambda segs, cb=None: segs
+            mock_trans_factory.return_value = mock_provider
+            mock_tts = MagicMock()
+            mock_tts.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
+            mock_tts_factory.return_value = mock_tts
+            mock_adapter = MagicMock()
+            mock_adapter.align.side_effect = lambda segs, td, cb=None, **kw: segs
+            mock_adapter_cls.return_value = mock_adapter
+            mock_srt = MagicMock()
+            mock_srt.generate_srt.side_effect = lambda segs, path: (
+                path.parent.mkdir(parents=True, exist_ok=True),
+                path.write_text("1\n00:00:00,000 --> 00:00:01,000\n嗨\n", encoding="utf-8"),
+                path,
+            )[-1]
+            mock_srt_cls.return_value = mock_srt
+            mock_ffmpeg = MagicMock()
+            mock_ffmpeg.get_video_duration.return_value = 10.0
+            mock_ffmpeg.compose_chinese_audio.return_value = output_dir / "audio.wav"
+            mock_ffmpeg.compose_video.return_value = output_dir / "out.mp4"
+            mock_ffmpeg_cls.return_value = mock_ffmpeg
+            result = pipeline.process(video, output_dir)
+
+        assert result.success is True
+        assert len(captured_temp_dir) == 1
+        assert not captured_temp_dir[0].exists()
+        # AC8: 验证清理日志
+        assert any("临时目录 | 清理" in r.message for r in caplog.records)
+
+    def test_failure_preserves_temp_dir(self, tmp_path: Path) -> None:
+        """AC6: 管线中途失败时保留临时目录供调试。"""
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake video content")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        captured_temp_dir: list[Path] = []
+        original_create = pipeline._create_temp_dir
+
+        def tracking_create(od: Path, vp: Path) -> Path:
+            td = original_create(od, vp)
+            captured_temp_dir.append(td)
+            return td
+
+        with (
+            patch("src.pipeline.subprocess.run") as mock_run,
+            patch.object(pipeline, "_create_temp_dir", tracking_create),
+            patch.object(pipeline, "_run_asr", side_effect=RuntimeError("ASR crash")),
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            result = pipeline.process(video, output_dir)
+
+        assert result.success is False
+        assert len(captured_temp_dir) == 1
+        assert captured_temp_dir[0].exists()
+
 
 class TestStart:
     def test_spawns_thread_and_finishes(
@@ -315,10 +411,10 @@ class TestStart:
             mock_provider.translate.side_effect = lambda segs, cb=None: segs
             mock_trans_factory.return_value = mock_provider
             mock_tts_engine = MagicMock()
-            mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None: segs
+            mock_tts_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             mock_tts_factory.return_value = mock_tts_engine
             mock_adapter = MagicMock()
-            mock_adapter.align.side_effect = lambda segs, td, cb=None: segs
+            mock_adapter.align.side_effect = lambda segs, td, cb=None, **kw: segs
             mock_adapter_cls.return_value = mock_adapter
             mock_srt = MagicMock()
             mock_srt.generate_srt.side_effect = lambda segs, path: (
@@ -464,7 +560,7 @@ class TestRunTTS:
             ),
         ]
 
-        def fake_synthesize(segs, td, cb=None):
+        def fake_synthesize(segs, td, cb=None, **kw):
             segs[0].audio_path = td / "segments" / "0000.mp3"
             segs[0].audio_duration = 2.5
             return segs
@@ -491,7 +587,7 @@ class TestRunTTS:
             lambda name, pct: progress_events.append((name, pct)),
         )
 
-        def fake_synthesize(segs, td, cb=None):
+        def fake_synthesize(segs, td, cb=None, **kw):
             if cb:
                 from src.models import ProgressEvent
                 cb(ProgressEvent(stage="TTS", progress=1.0, message="正在合成 1/1"))
@@ -533,7 +629,7 @@ class TestRunTTS:
                 )
                 return mock_engine
             mock_engine = MagicMock()
-            mock_engine.synthesize.side_effect = lambda segs, td, cb=None: segs
+            mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
 
         with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
@@ -573,6 +669,186 @@ class TestRunTTS:
             pytest.raises(PipelineError, match="预加载超时"),
         ):
             pipeline._run_tts(segments, tmp_path)
+
+    def test_cosyvoice_memory_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+        """AC1: MemoryError 触发自动降级到 Edge-TTS。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "cosyvoice"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        def mock_create_tts(cfg):
+            if cfg.engine == "cosyvoice":
+                mock_engine = MagicMock()
+                mock_engine.synthesize.side_effect = MemoryError("OOM")
+                return mock_engine
+            mock_engine = MagicMock()
+            mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
+            return mock_engine
+
+        with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
+            pipeline._run_tts(segments, tmp_path)
+
+        assert len(degraded_signals) == 1
+        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+        assert segments[0].source_text == "Hi"
+
+    def test_cosyvoice_runtime_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+        """AC1: RuntimeError（模型加载失败）触发自动降级。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "cosyvoice"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        def mock_create_tts(cfg):
+            if cfg.engine == "cosyvoice":
+                mock_engine = MagicMock()
+                mock_engine.synthesize.side_effect = RuntimeError("model load failed")
+                return mock_engine
+            mock_engine = MagicMock()
+            mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
+            return mock_engine
+
+        with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
+            pipeline._run_tts(segments, tmp_path)
+
+        assert len(degraded_signals) == 1
+        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+
+    def test_cosyvoice_import_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+        """AC1: ImportError（CosyVoice 未安装）触发自动降级。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "cosyvoice"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        def mock_create_tts(cfg):
+            if cfg.engine == "cosyvoice":
+                mock_engine = MagicMock()
+                mock_engine.synthesize.side_effect = ImportError("No module named 'cosyvoice'")
+                return mock_engine
+            mock_engine = MagicMock()
+            mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
+            return mock_engine
+
+        with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
+            pipeline._run_tts(segments, tmp_path)
+
+        assert len(degraded_signals) == 1
+        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+
+    def test_cosyvoice_degrades_edge_tts_also_fails(self, tmp_path: Path) -> None:
+        """AC5: CosyVoice 降级后 Edge-TTS 也失败 → PipelineError(stage=TTS)。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "cosyvoice"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        def mock_create_tts(cfg):
+            mock_engine = MagicMock()
+            mock_engine.synthesize.side_effect = MemoryError("OOM")
+            return mock_engine
+
+        with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
+            with pytest.raises(PipelineError, match="CosyVoice 失败.*Edge-TTS 也失败") as exc_info:
+                pipeline._run_tts(segments, tmp_path)
+
+        assert exc_info.value.stage == "TTS"
+        assert exc_info.value.suggestion is not None
+        assert "OOM" in str(exc_info.value)
+        assert len(degraded_signals) == 1
+
+    def test_cosyvoice_empty_memory_error_degrades(self, tmp_path: Path) -> None:
+        """AC1: 空 MemoryError() 降级时日志用类名回退。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "cosyvoice"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        def mock_create_tts(cfg):
+            if cfg.engine == "cosyvoice":
+                mock_engine = MagicMock()
+                mock_engine.synthesize.side_effect = MemoryError()
+                return mock_engine
+            mock_engine = MagicMock()
+            mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
+            return mock_engine
+
+        with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
+            result = pipeline._run_tts(segments, tmp_path)
+
+        assert len(degraded_signals) == 1
+        assert result[0].source_text == "Hi"
+
+    def test_non_cosyvoice_memory_error_does_not_degrade(self, tmp_path: Path) -> None:
+        """AC5: 非 CosyVoice 引擎失败时不降级，直接抛异常。"""
+        config = _make_config(tmp_path)
+        config.tts.engine = "edge-tts"
+        pipeline = Pipeline(config, PipelineSignals())
+        pipeline._tts_ready_event.set()
+        segments = [SubtitleSegment(
+            index=0, start_time=0.0, end_time=1.0,
+            source_text="Hi", translated_text="嗨",
+        )]
+
+        degraded_signals: list[tuple[str, str]] = []
+        pipeline.signals.tts_degraded.connect(
+            lambda orig, fallback: degraded_signals.append((orig, fallback)),
+        )
+
+        mock_engine = MagicMock()
+        mock_engine.synthesize.side_effect = RuntimeError("connection failed")
+
+        with patch("src.tts.create_tts_engine", return_value=mock_engine):
+            with pytest.raises(RuntimeError, match="connection failed"):
+                pipeline._run_tts(segments, tmp_path)
+
+        assert len(degraded_signals) == 0
 
 
 class TestRunAlignment:

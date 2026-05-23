@@ -42,7 +42,8 @@ from src.validators import validate_all
 
 logger = logging.getLogger("video_translator")
 
-_OUTPUT_DIR = Path("output")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_OUTPUT_DIR = _PROJECT_ROOT / "output"
 
 
 class MainWindow(QMainWindow):
@@ -340,12 +341,20 @@ class MainWindow(QMainWindow):
             self.restoreState(state)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Qt 关闭事件重写：刷新待保存配置、停止校验定时器、持久化窗口几何信息。
+        if self._translating and self._pipeline is not None:
+            reply = QMessageBox.question(
+                self,
+                "确认退出",
+                "翻译正在进行中，确定要退出吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
 
-        Args:
-            event: Qt 关闭事件对象。
-        """
-        self._translating = False
+            self._pipeline.abort()
+            self._translating = False
+
         try:
             if self._config_panel._save_timer.isActive():
                 self._config_panel._save_timer.stop()

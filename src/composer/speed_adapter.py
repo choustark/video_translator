@@ -16,6 +16,30 @@ _MAX_SPEED_RATIO = 1.5
 _SINGLE_DEVIATION_THRESHOLD = 0.15
 _GLOBAL_DEVIATION_THRESHOLD = 0.10
 
+_rubberband_available: bool | None = None
+
+
+def _check_rubberband() -> bool:
+    """检测 ffmpeg 是否支持 rubberband 滤镜（结果缓存）。"""
+    global _rubberband_available
+    if _rubberband_available is not None:
+        return _rubberband_available
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-filters"],
+            capture_output=True, text=True, timeout=10,
+        )
+        _rubberband_available = "rubberband" in result.stdout
+    except Exception:
+        _rubberband_available = False
+    if not _rubberband_available:
+        logger.warning("rubberband 滤镜不可用，降级使用 atempo")
+    return _rubberband_available
+
+
+# 模块加载时预检测，避免首次 _speed_up() 调用的 1-3 秒延迟
+_check_rubberband()
+
 
 class SpeedAdapter:
     """语速自适应对齐 — ffmpeg atempo 加速 + apad 静音填充。"""
@@ -47,12 +71,15 @@ class SpeedAdapter:
         if total == 0:
             return segments
 
+        processable = [seg for seg in segments if seg.audio_path and seg.audio_duration > 0]
+        processable_total = len(processable)
+
         aligned_dir = temp_dir / "aligned"
         aligned_dir.mkdir(parents=True, exist_ok=True)
 
-        for i, seg in enumerate(segments):
-            if not seg.audio_path or seg.audio_duration <= 0:
-                continue
+        processed = 0
+        for seg in processable:
+            processed += 1
 
             target_duration = seg.end_time - seg.start_time
             actual_duration = seg.audio_duration
@@ -84,17 +111,21 @@ class SpeedAdapter:
             if progress_callback:
                 progress_callback(ProgressEvent(
                     stage="语速自适应",
-                    progress=(i + 1) / total,
-                    message=f"正在对齐 {i + 1}/{total}",
+                    progress=processed / processable_total,
+                    message=f"正在对齐 {processed}/{processable_total}",
                 ))
 
         self._check_global_deviation(segments)
 
+        skipped = total - processable_total
+        summary = f"对齐完成 {processable_total}/{processable_total}"
+        if skipped:
+            summary += f"（跳过 {skipped} 段）"
         if progress_callback:
             progress_callback(ProgressEvent(
                 stage="语速自适应",
                 progress=1.0,
-                message=f"对齐完成 {total}/{total}",
+                message=summary,
             ))
 
         return segments
@@ -109,9 +140,13 @@ class SpeedAdapter:
         self._run_ffmpeg(cmd)
 
     def _speed_up(self, input_path: Path, speed_ratio: float, output_path: Path) -> None:
+        if _check_rubberband():
+            filter_str = f"rubberband=tempo={speed_ratio:.4f}"
+        else:
+            filter_str = f"atempo={speed_ratio:.4f}"
         cmd = [
             "ffmpeg", "-y", "-i", str(input_path),
-            "-filter:a", f"atempo={speed_ratio:.4f}",
+            "-filter:a", filter_str,
             "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
             str(output_path),
         ]

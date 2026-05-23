@@ -11,14 +11,13 @@ from pathlib import Path
 
 import psutil
 
-from src.config import AppConfig
+from src.config import DEFAULT_MEMORY_WARNING_GB, AppConfig
 from src.exceptions import ValidationError
 
 logger = logging.getLogger("video_translator")
 
 _MIN_FFMPEG_VERSION = 4
-_MAX_VIDEO_DURATION_SECONDS = 600
-_DEFAULT_MEMORY_REQUIREMENT_GB = 2.0
+_MAX_VIDEO_DURATION_SECONDS = 1800
 _API_CHECK_TIMEOUT_SECONDS = 5
 
 _SUPPORTED_VIDEO_FORMATS = frozenset({".mp4", ".mkv", ".mov", ".avi"})
@@ -254,7 +253,7 @@ def validate_video_format(video_path: Path) -> None:
 
 
 def validate_video_duration(video_path: Path) -> None:
-    """校验视频时长是否在限制内（≤10 分钟）。
+    """校验视频时长是否在限制内（≤30 分钟）。
 
     通过 ffprobe 获取视频时长。
 
@@ -301,13 +300,13 @@ def validate_video_duration(video_path: Path) -> None:
 
     if duration > _MAX_VIDEO_DURATION_SECONDS:
         raise ValidationError(
-            f"视频时长 {duration:.0f} 秒超过 {_MAX_VIDEO_DURATION_SECONDS} 秒（10 分钟）限制",
+            f"视频时长 {duration:.0f} 秒超过 {_MAX_VIDEO_DURATION_SECONDS} 秒（30 分钟）限制",
             stage="video",
-            suggestion="请选择时长不超过 10 分钟的视频",
+            suggestion="请选择时长不超过 30 分钟的视频",
         )
 
 
-def validate_memory(requirement_gb: float = _DEFAULT_MEMORY_REQUIREMENT_GB) -> None:
+def validate_memory(requirement_gb: float = DEFAULT_MEMORY_WARNING_GB) -> None:
     """校验可用内存是否满足模型加载需求。
 
     Args:
@@ -357,7 +356,7 @@ def validate_config_only(config: AppConfig) -> ValidationResult:
         ("validate_asr_model", (config.asr.model_path,)),
         ("validate_translation_api", (config.translation.engine, config.translation.api_key)),
         ("validate_tts_model", (config.tts.engine, config.tts.model_path)),
-        ("validate_memory", ()),
+        ("validate_memory", (config.memory.warning_gb,)),
     ]
 
     for func_name, args in checks:
@@ -371,18 +370,6 @@ def validate_config_only(config: AppConfig) -> ValidationResult:
 
 
 def validate_all(config: AppConfig, video_path: Path) -> ValidationResult:
-    """执行全部翻译前校验，收集所有失败项。
-
-    依次执行 7 项检查，每项失败时捕获 ValidationError 并追加到结果列表，
-    不因单项失败中断后续检查。
-
-    Args:
-        config: 应用配置（包含 ASR/翻译/TTS 子配置）。
-        video_path: 待翻译的视频文件路径。
-
-    Returns:
-        ValidationResult 包含所有失败的校验项。
-    """
     errors: list[ValidationError] = []
 
     checks: list[tuple[str, tuple[object, ...]]] = [
@@ -392,7 +379,7 @@ def validate_all(config: AppConfig, video_path: Path) -> ValidationResult:
         ("validate_tts_model", (config.tts.engine, config.tts.model_path)),
         ("validate_video_format", (video_path,)),
         ("validate_video_duration", (video_path,)),
-        ("validate_memory", ()),
+        ("validate_memory", (config.memory.warning_gb,)),
     ]
 
     for func_name, args in checks:

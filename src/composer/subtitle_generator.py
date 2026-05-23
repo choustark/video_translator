@@ -25,8 +25,12 @@ class SubtitleGenerator:
         for seg in segments:
             if not seg.translated_text:
                 continue
-            start = self._format_timestamp(seg.start_time)
-            end = self._format_timestamp(seg.end_time)
+            start = self._format_timestamp(
+                seg.actual_start_time if seg.actual_start_time is not None else seg.start_time,
+            )
+            end = self._format_timestamp(
+                seg.actual_end_time if seg.actual_end_time is not None else seg.end_time,
+            )
             entries.append(f"{seq}\n{start} --> {end}\n{seg.translated_text}")
             seq += 1
 

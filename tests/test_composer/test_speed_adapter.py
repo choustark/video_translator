@@ -82,7 +82,8 @@ class TestSpeedAdapterSpeedUp:
 
         mock_run = stack.mock_run
         cmd = mock_run.call_args[0][0]
-        assert "atempo=1.5000" in cmd
+        cmd_str = " ".join(cmd)
+        assert "atempo=1.5000" in cmd_str or "rubberband=tempo=1.5000" in cmd_str
         assert result[0].audio_path == tmp_path / "aligned" / "0000.wav"
 
     def test_audio_too_long_skips_speedup(self, tmp_path: Path) -> None:
@@ -94,7 +95,8 @@ class TestSpeedAdapterSpeedUp:
 
         mock_run = stack.mock_run
         cmd = mock_run.call_args[0][0]
-        assert "atempo" not in " ".join(cmd)
+        cmd_str = " ".join(cmd)
+        assert "atempo" not in cmd_str and "rubberband" not in cmd_str
         assert result[0].audio_path == tmp_path / "aligned" / "0000.wav"
 
 

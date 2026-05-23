@@ -11,11 +11,17 @@ from src.exceptions import ConfigError
 
 logger = logging.getLogger("video_translator")
 
+# 中文口语基准语速（字/秒），用于翻译时长约束和 TTS 语速计算
+CHARS_PER_SEC = 4.0
+# 默认内存告警阈值（GB），与 MemoryConfig.warning_gb 默认值保持同步
+DEFAULT_MEMORY_WARNING_GB = 6.0
+
 
 class ASRConfig(BaseModel):
     engine: Literal["mlx-whisper", "faster-whisper", "whisper"]
     model_path: str
     language: str = "en"
+    proper_nouns: list[str] = Field(default_factory=list)
 
 
 class TranslationConfig(BaseModel):
@@ -31,14 +37,41 @@ class TTSConfig(BaseModel):
     model_path: str = ""
     voice: str = "default"
     speed: float = Field(1.0, ge=0.5, le=2.0)
+    conda_python_path: str = ""
+    cosyvoice_source_path: str = ""
+
+
+class SubtitleConfig(BaseModel):
+    style: str = "classic_white"
+
+
+class MemoryConfig(BaseModel):
+    warning_gb: float = DEFAULT_MEMORY_WARNING_GB
 
 
 class AppConfig(BaseModel):
     asr: ASRConfig
     translation: TranslationConfig
     tts: TTSConfig
+    subtitle: SubtitleConfig = SubtitleConfig()
+    memory: MemoryConfig = MemoryConfig()
     preset: str = "high_quality"
 
+
+SUBTITLE_STYLES: dict[str, str] = {
+    "classic_white": (  # noqa: E501
+        "FontSize=20,PrimaryColour=&Hffffff&,"
+        "OutlineColour=&H40000000,BorderStyle=1,Outline=2,Alignment=2"
+    ),
+    "yellow_black": (  # noqa: E501
+        "FontSize=22,PrimaryColour=&H00ffff&,"
+        "OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2"
+    ),
+    "white_clean": (  # noqa: E501
+        "FontSize=18,PrimaryColour=&Hffffff&,"
+        "BackColour=&H80000000,BorderStyle=3,Outline=0,Alignment=2"
+    ),
+}
 
 _PRESETS_DATA: dict[str, dict] = {
     "high_quality": {

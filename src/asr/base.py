@@ -12,6 +12,7 @@ class ASREngine(ABC):
 
     def __init__(self, config: ASRConfig) -> None:
         self.config = config
+        self.memory_warning_gb: float = 6.0
 
     @abstractmethod
     def transcribe(

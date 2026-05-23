@@ -27,6 +27,9 @@ class Pipeline:
         self.states: dict[str, StageState] = {name: StageState(name) for name in STAGE_NAMES}
         self._current_stage: str = STAGE_NAMES[0]
         self._tts_ready_event = threading.Event()
+        self._abort_requested = False
+        self._temp_dir: Path | None = None
+        self._active_processes: list[subprocess.Popen[bytes]] = []
 
     def start(self, video_path: Path, output_dir: Path) -> None:
         """在后台守护线程中启动管线。"""
@@ -44,11 +47,43 @@ class Pipeline:
             logger.exception("管线 | 未捕获异常")
             self.signals.pipeline_finished.emit()
 
+    def abort(self) -> None:
+        self._abort_requested = True
+
+        # 终止所有已注册的子进程（CosyVoice worker 等）
+        for proc in self._active_processes:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        for proc in self._active_processes:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                except OSError:
+                    pass
+            except OSError:
+                pass
+        self._active_processes.clear()
+
+        # 清理临时目录
+        temp = self._temp_dir
+        if temp and temp.exists():
+            try:
+                shutil.rmtree(temp)
+                logger.info("临时目录 | abort 清理 | path=%s", temp)
+            except OSError:
+                pass
+
     def process(self, video_path: Path, output_dir: Path) -> PipelineResult:
         """主编排方法：六阶段顺序执行。"""
         temp_dir: Path | None = None
         try:
             temp_dir = self._create_temp_dir(output_dir, video_path)
+            self._temp_dir = temp_dir
 
             # 阶段 1: 音频提取（本 Story 实际实现）
             self._start_stage("音频提取")
@@ -129,6 +164,8 @@ class Pipeline:
     # ── 阶段状态管理 ──────────────────────────────────────────
 
     def _start_stage(self, name: str) -> None:
+        if self._abort_requested:
+            raise PipelineError("用户中止", stage=name, suggestion="")
         self._current_stage = name
         state = self.states[name]
         state.status = StageStatus.RUNNING
@@ -207,6 +244,7 @@ class Pipeline:
         from src.models import ProgressEvent
 
         engine = create_asr_engine(self.config.asr)
+        engine.memory_warning_gb = self.config.memory.warning_gb
 
         def progress_callback(event: ProgressEvent) -> None:
             self.signals.stage_progress.emit(event.stage, event.progress)
@@ -277,16 +315,34 @@ class Pipeline:
 
         try:
             engine = create_tts_engine(self.config.tts)
-            segments = engine.synthesize(segments, temp_dir, progress_callback)
-        except PipelineError:
+            segments = engine.synthesize(
+                segments, temp_dir, progress_callback,
+                process_registry=self._active_processes,
+            )
+        except (PipelineError, MemoryError, RuntimeError, ImportError) as e:
             if self.config.tts.engine == "cosyvoice":
-                logger.warning("TTS | CosyVoice 失败，降级到 Edge-TTS")
+                degraded_msg = str(e) or type(e).__name__
+                logger.warning(
+                    'TTS | DEGRADED | msg="%s" | fallback="edge-tts"',
+                    degraded_msg,
+                )
                 self.signals.tts_degraded.emit("cosyvoice", "edge-tts")
                 fallback_config = TTSConfig(
                     engine="edge-tts", speed=self.config.tts.speed,
                 )
-                engine = create_tts_engine(fallback_config)
-                segments = engine.synthesize(segments, temp_dir, progress_callback)
+                try:
+                    engine = create_tts_engine(fallback_config)
+                    segments = engine.synthesize(
+                        segments, temp_dir, progress_callback,
+                        process_registry=self._active_processes,
+                    )
+                except Exception as fallback_err:
+                    raise PipelineError(
+                        f'CosyVoice 失败: "{degraded_msg}", '
+                        f'Edge-TTS 也失败: {fallback_err}',
+                        stage="TTS",
+                        suggestion="请检查网络连接，或尝试重新运行",
+                    ) from fallback_err
             else:
                 raise
 
@@ -319,6 +375,8 @@ class Pipeline:
         output_dir.mkdir(parents=True, exist_ok=True)
         stem = video_path.stem
 
+        self._calc_actual_timestamps(segments)
+
         srt_path = temp_dir / "subtitles.srt"
         generator.generate_srt(segments, srt_path)
         srt_output = output_dir / f"{stem}.srt"
@@ -333,8 +391,32 @@ class Pipeline:
         logger.info("合成 | 中文音频 | output=%s", chinese_audio_path)
 
         output_video_path = output_dir / f"{stem}_translated.mp4"
-        wrapper.compose_video(video_path, chinese_audio_path, srt_path, output_video_path)
+        wrapper.compose_video(
+            video_path, chinese_audio_path, srt_path, output_video_path,
+            style_name=self.config.subtitle.style,
+        )
         self.signals.stage_progress.emit("合成", 1.0)
         logger.info("合成 | 视频 | output=%s", output_video_path)
 
         return output_video_path
+
+    @staticmethod
+    def _calc_actual_timestamps(segments: list[SubtitleSegment]) -> None:
+        """根据对齐后的音频时长和拼接间隙，计算每段在实际音频流中的时间戳。"""
+        valid = [s for s in segments if s.audio_path and s.audio_duration > 0]
+        if not valid:
+            return
+
+        cursor = 0.0
+        if valid[0].start_time > 0.01:
+            cursor += valid[0].start_time
+
+        for i, seg in enumerate(valid):
+            seg.actual_start_time = cursor
+            cursor += seg.audio_duration
+            seg.actual_end_time = cursor
+
+            if i < len(valid) - 1:
+                gap = valid[i + 1].start_time - seg.end_time
+                if gap > 0.01:
+                    cursor += gap

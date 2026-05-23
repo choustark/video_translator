@@ -25,8 +25,8 @@ logger = logging.getLogger("video_translator")
 
 # 支持的视频格式后缀
 SUPPORTED_FORMATS = {".mp4", ".mkv", ".mov", ".avi"}
-# 视频时长上限（秒），v1 限制 10 分钟
-MAX_DURATION_SECONDS = 600
+# 视频时长上限（秒），限制 30 分钟
+MAX_DURATION_SECONDS = 1800
 
 
 class VideoDropArea(QFrame):
@@ -263,7 +263,7 @@ class VideoDropArea(QFrame):
 
         if duration_seconds > MAX_DURATION_SECONDS:
             minutes = duration_seconds / 60
-            self._set_error_state(f"视频时长超过 10 分钟限制（{minutes:.1f} 分钟）")
+            self._set_error_state(f"视频时长超过 30 分钟限制（{minutes:.1f} 分钟）")
             logger.warning("视频时长超限: %.1f 秒", duration_seconds)
             return
 

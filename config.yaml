@@ -2,15 +2,22 @@
   "engine": "mlx-whisper"
   "model_path": "models/asr/whisper-medium"
   "language": "en"
+  "proper_nouns": []
 "translation":
-  "engine": "nllb"
-  "api_key": "a211927317d94995bcb7c718816d9304.xxxxxxx"
+  "engine": "glm"
+  "api_key": "your-api-key-here"
   "model": "glm-4-flash"
   "source_lang": "EN"
   "target_lang": "ZH"
 "tts":
-  "engine": "cosyvoice"
+  "engine": "edge-tts"
   "model_path": ""
   "voice": "default"
   "speed": 1.0
+  "conda_python_path": ""
+  "cosyvoice_source_path": ""
+"subtitle":
+  "style": "classic_white"
+"memory":
+  "warning_gb": 6.0
 "preset": "high_quality"

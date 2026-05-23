@@ -21,8 +21,9 @@ video_translator 是一个 PySide6 桌面应用，面向有技术背景的个人
 | 桌面框架 | PySide6 | Qt 官方维护，LGPL 协议友好；不做 Electron/Web 路线，PySide 也可以做得好看 |
 | ASR | mlx-whisper + large-v3-turbo | Apple Silicon 优化，其他 whisper 变体无 MPS 加速 |
 | 翻译 | GLM API（默认）| 成本极低 ~$0.05/10min；同时支持 DeepSeek/OpenAI/DeepL/NLLB 本地 |
-| TTS | CosyVoice（v1 主力） | Apache 2.0 开源，支持语速控制；不选 GPT-SoVITS（v2 再考虑声音克隆） |
-| TTS 备选 | Edge-TTS | 云端免费，作为 OOM 降级方案 |
+| TTS | CosyVoice（v1 主力） | Apache 2.0 开源，支持语速控制；不选 GPT-SoVITS（v2 再考虑声音克隆）；macOS 部署较复杂，见 `docs/cosyvoice-deployment-guide.md` |
+| TTS 备选 | Edge-TTS | 云端免费，作为 OOM 降级方案；v1 当前实际主力 |
+| TTS 本地备选 | sherpa-onnx + MeloTTS | `pip install sherpa-onnx` 一行安装，macOS 原生支持，离线运行；CosyVoice 部署失败时的优先替代 |
 | 音视频引擎 | ffmpeg | 不内置，用户 brew install 自行安装 |
 | 配置格式 | YAML + pydantic 校验 | 开发者友好，可读性好 |
 | 分发 | pip install + Docker（v1） | v3.0 再做 dmg/pkg |
@@ -30,7 +31,7 @@ video_translator 是一个 PySide6 桌面应用，面向有技术背景的个人
 | 字幕 | 硬字幕烧录（ffmpeg） | 字幕烧录到视频画面中 |
 | GPU 加速 | 自动检测 MPS/Metal | 用户无感，不在界面暴露 GPU 开关 |
 | 失败恢复 | v1 不做断点续传，失败从头重跑 | 简单可靠 |
-| 视频长度 | v1 限 10 分钟 | 长视频分段处理留到 v2.0 |
+| 视频长度 | 限 30 分钟（1800 秒） | v1 从 10 分钟放宽至 30 分钟；分段处理留到 v2.0 |
 
 ## 核心创新：语速自适应对齐算法
 
@@ -54,7 +55,7 @@ v1 用简单方案先跑通，不提前优化。
 
 - **Pipe-and-Filter** + **Strategy Pattern**
 - 每个环节（ASR/翻译/TTS）独立可选、可替换
-- ASR 和 TTS 顺序加载、顺序释放，峰值内存 ~8GB
+- ASR 和 TTS 顺序加载、顺序释放（ASR 完成后主动释放 MLX Metal 缓存），峰值内存 ~5GB
 - ASR 执行时后台预加载 TTS 模型
 
 ## 预设配置方案
@@ -103,10 +104,10 @@ v1 用简单方案先跑通，不提前优化。
 | Epic 1: 项目基础与配置管理 | ✅ done | 6 个 story 全部完成 |
 | Epic 2: 桌面应用外壳与视频输入 | ✅ done | 3 个 story 全部完成 |
 | Epic 3: 翻译前校验 | ✅ done | 2 个 story 全部完成 |
-| **Epic 4: 端到端翻译管线** | **🔄 进行中** | 4-1 ✅ 4-2 ✅ → **下一个: 4-3 文本翻译** |
+| **Epic 4: 端到端翻译管线** | **✅ done** | 4-1~4-7 全部完成，含 CosyVoice subprocess 桥 (2026-05-22) |
 | Epic 5: 错误恢复与系统韧性 | backlog | 还没开始 |
 
-**下一步：** 创建并实现 Story 4-3 文本翻译（`bmad-create-story`）
+**下一步：** 进入 v1.1 规划，或对 CosyVoice 集成做进一步测试
 
 ### 输入文档说明
 

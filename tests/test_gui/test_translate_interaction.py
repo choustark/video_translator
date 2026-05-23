@@ -36,25 +36,24 @@ class TestTranslateButton:
             mock_validate.return_value.errors = []
             mock_validate.return_value.is_valid = True
             main_window._translate_btn.click()
-        assert main_window._translate_btn.text() == "翻译中..."
-        assert main_window._translate_btn.isEnabled() is False
+        assert main_window._translate_btn.text() == "中止翻译"
+        assert main_window._translate_btn.isEnabled() is True
 
-    def test_rapid_clicks_blocked(self, main_window: MainWindow) -> None:
+    def test_click_while_translating_triggers_abort(
+        self, main_window: MainWindow
+    ) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
+        main_window._translating = True
+        main_window._pipeline = MagicMock()
         main_window._translate_btn.setEnabled(True)
-        with patch("src.gui.main_window.validate_all") as mock_validate:
-            mock_validate.return_value.errors = []
-            mock_validate.return_value.is_valid = True
-            main_window._translate_btn.click()
-        main_window._translate_btn.setEnabled(False)
         main_window._translate_btn.click()
-        assert main_window._translate_btn.text() == "翻译中..."
+        main_window._pipeline.abort.assert_called_once()
 
     def test_button_restores_after_translate_done(
         self, main_window: MainWindow
     ) -> None:
-        main_window._translate_btn.setText("翻译中...")
-        main_window._translate_btn.setEnabled(False)
+        main_window._translate_btn.setText("中止翻译")
+        main_window._translating = True
         main_window._on_pipeline_finished()
         assert main_window._translate_btn.text() == "开始翻译"
         assert main_window._translate_btn.isEnabled() is False
@@ -65,8 +64,8 @@ class TestTranslateButton:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._validation_passed = True
         main_window._on_video_loaded(Path("/test/video.mp4"))
-        main_window._translate_btn.setText("翻译中...")
-        main_window._translate_btn.setEnabled(False)
+        main_window._translate_btn.setText("中止翻译")
+        main_window._translating = True
         main_window._on_pipeline_finished()
         assert main_window._translate_btn.isEnabled() is True
 

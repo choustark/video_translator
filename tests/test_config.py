@@ -97,9 +97,34 @@ class TestYamlLoadSave:
         loaded = load_config(path)
         assert loaded.asr.engine == "mlx-whisper"
         assert loaded.asr.model_path == "/asr/model"
-        assert loaded.translation.api_key == "test-key"
+        # api_key 不再写入 config.yaml，应从 .env 或环境变量获取
+        assert loaded.translation.api_key == ""
         assert loaded.tts.speed == 1.2
         assert loaded.preset == "custom"
+
+    def test_api_key_from_env_file(self, tmp_path: Path) -> None:
+        from src.config import _ENV_API_KEY, _load_dotenv, save_api_key_to_env
+
+        env_path = tmp_path / ".env"
+        save_api_key_to_env("env-file-key", env_path)
+        env_values = _load_dotenv(env_path)
+        assert env_values[_ENV_API_KEY] == "env-file-key"
+
+    def test_api_key_from_env_var(self, tmp_path: Path, monkeypatch) -> None:
+        from src.config import _ENV_API_KEY
+
+        monkeypatch.setenv(_ENV_API_KEY, "env-var-key")
+
+        cfg = AppConfig(
+            asr=ASRConfig(engine="mlx-whisper", model_path="/asr/model"),
+            translation=TranslationConfig(engine="glm"),
+            tts=TTSConfig(engine="cosyvoice"),
+            preset="custom",
+        )
+        path = tmp_path / "config.yaml"
+        save_config(cfg, path)
+        loaded = load_config(path)
+        assert loaded.translation.api_key == "env-var-key"
 
     def test_load_nonexistent_file(self, tmp_path: Path) -> None:
         with pytest.raises(ConfigError, match="配置文件不存在"):

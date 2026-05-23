@@ -27,7 +27,7 @@ class Pipeline:
         self.states: dict[str, StageState] = {name: StageState(name) for name in STAGE_NAMES}
         self._current_stage: str = STAGE_NAMES[0]
         self._tts_ready_event = threading.Event()
-        self._abort_requested = False
+        self._abort_requested = threading.Event()
         self._temp_dir: Path | None = None
         self._active_processes: list[subprocess.Popen[bytes]] = []
 
@@ -48,7 +48,7 @@ class Pipeline:
             self.signals.pipeline_finished.emit()
 
     def abort(self) -> None:
-        self._abort_requested = True
+        self._abort_requested.set()
 
         # 终止所有已注册的子进程（CosyVoice worker 等）
         for proc in self._active_processes:
@@ -164,7 +164,7 @@ class Pipeline:
     # ── 阶段状态管理 ──────────────────────────────────────────
 
     def _start_stage(self, name: str) -> None:
-        if self._abort_requested:
+        if self._abort_requested.is_set():
             raise PipelineError("用户中止", stage=name, suggestion="")
         self._current_stage = name
         state = self.states[name]
@@ -190,6 +190,11 @@ class Pipeline:
         state.error = error
         self.signals.stage_failed.emit(name, error)
         logger.error("%s | ERROR | msg=%s", name, error)
+
+    def _check_abort(self) -> None:
+        """检查是否已请求中止，如果是则抛出 PipelineError 中断当前阶段。"""
+        if self._abort_requested.is_set():
+            raise PipelineError("用户中止", stage=self._current_stage, suggestion="")
 
     # ── 阶段 1: 音频提取 ────────────────────────────────────
 
@@ -247,6 +252,7 @@ class Pipeline:
         engine.memory_warning_gb = self.config.memory.warning_gb
 
         def progress_callback(event: ProgressEvent) -> None:
+            self._check_abort()
             self.signals.stage_progress.emit(event.stage, event.progress)
 
         preload_thread = threading.Thread(
@@ -283,6 +289,7 @@ class Pipeline:
         provider = create_translation_provider(self.config.translation)
 
         def progress_callback(event: ProgressEvent) -> None:
+            self._check_abort()
             self.signals.stage_progress.emit(event.stage, event.progress)
 
         segments = provider.translate(segments, progress_callback)
@@ -311,6 +318,7 @@ class Pipeline:
             )
 
         def progress_callback(event: ProgressEvent) -> None:
+            self._check_abort()
             self.signals.stage_progress.emit(event.stage, event.progress)
 
         try:
@@ -358,6 +366,7 @@ class Pipeline:
         adapter = SpeedAdapter()
 
         def progress_callback(event: ProgressEvent) -> None:
+            self._check_abort()
             self.signals.stage_progress.emit(event.stage, event.progress)
 
         segments = adapter.align(segments, temp_dir, progress_callback)

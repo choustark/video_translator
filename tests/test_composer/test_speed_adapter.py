@@ -50,7 +50,7 @@ def _patch_ffmpeg(audio_duration: float = 2.0):
 
 
 class TestSpeedAdapterPad:
-    def test_audio_shorter_pads_with_apad(self, tmp_path: Path) -> None:
+    def test_audio_shorter_pads_centered(self, tmp_path: Path) -> None:
         adapter = SpeedAdapter()
         segments = _make_segments((0.0, 3.0, 2.0))
 
@@ -59,7 +59,9 @@ class TestSpeedAdapterPad:
 
         mock_run = stack.mock_run
         cmd = mock_run.call_args[0][0]
-        assert "apad=whole_dur=3.000" in cmd
+        cmd_str = " ".join(cmd)
+        assert "adelay=500|500" in cmd_str
+        assert "apad=whole_dur=3.000" in cmd_str
         assert result[0].audio_path == tmp_path / "aligned" / "0000.wav"
 
     def test_pad_creates_aligned_directory(self, tmp_path: Path) -> None:

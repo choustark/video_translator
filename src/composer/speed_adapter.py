@@ -42,7 +42,7 @@ _check_rubberband()
 
 
 class SpeedAdapter:
-    """语速自适应对齐 — ffmpeg atempo 加速 + apad 静音填充。"""
+    """语速自适应对齐 — ffmpeg atempo 加速 + apad 居中静音填充。"""
 
     def align(
         self,
@@ -52,7 +52,8 @@ class SpeedAdapter:
     ) -> list[SubtitleSegment]:
         """将每段中文配音的时长对齐到原始英文字幕的时间窗口。
 
-        对于时长短于目标窗口的音频，使用 ffmpeg apad 填充静音；
+        对于时长短于目标窗口的音频，使用 ffmpeg adelay+apad 将静音均匀分布
+        在语音前后（居中填充），避免语音全部挤在开头；
         对于时长超出的音频，使用 ffmpeg atempo 加速，但当加速比超过 1.5x 时
         跳过加速并保留原始音频。对齐后检测单段偏差（>15%）和全局偏差（>10%）。
 
@@ -87,7 +88,7 @@ class SpeedAdapter:
             original_path = seg.audio_path
 
             if actual_duration < target_duration:
-                self._pad(original_path, target_duration, output_path)
+                self._pad(original_path, actual_duration, target_duration, output_path)
             elif actual_duration > target_duration:
                 speed_ratio = actual_duration / target_duration
                 if speed_ratio <= _MAX_SPEED_RATIO:
@@ -130,10 +131,19 @@ class SpeedAdapter:
 
         return segments
 
-    def _pad(self, input_path: Path, target_duration: float, output_path: Path) -> None:
+    def _pad(
+        self,
+        input_path: Path,
+        actual_duration: float,
+        target_duration: float,
+        output_path: Path,
+    ) -> None:
+        pad_total = target_duration - actual_duration
+        pad_before_ms = int(pad_total / 2 * 1000)
+        filter_str = f"adelay={pad_before_ms}|{pad_before_ms},apad=whole_dur={target_duration:.3f}"
         cmd = [
             "ffmpeg", "-y", "-i", str(input_path),
-            "-filter:a", f"apad=whole_dur={target_duration:.3f}",
+            "-filter:a", filter_str,
             "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
             str(output_path),
         ]

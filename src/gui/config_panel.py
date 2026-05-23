@@ -28,6 +28,7 @@ from src.config import (
     TTSConfig,
     get_preset,
     load_config,
+    save_api_key_to_env,
     save_config,
 )
 from src.exceptions import ConfigError
@@ -478,6 +479,8 @@ class ConfigPanel(QWidget):
     def _do_save(self) -> None:
         config = self._collect_config()
         if config is not None:
+            api_key = str(self._api_key_input.text())
+            save_api_key_to_env(api_key)
             save_config(config, self._config_path)
 
     def _collect_config(self) -> AppConfig | None:

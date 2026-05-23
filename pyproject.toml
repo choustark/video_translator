@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "video-translator"
 version = "0.1.0"
 description = "Apple Silicon 英文视频翻译为中文配音的桌面工具"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "PySide6>=6.6",
     "pydantic>=2.0",
@@ -17,6 +17,8 @@ dependencies = [
     "httpx[socks]>=0.27",
     "mlx-whisper>=0.4",
     "edge-tts>=7.0",
+    "python-dotenv>=1.0",
+    "audioop-lts>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +37,7 @@ dev = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 

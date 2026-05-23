@@ -348,13 +348,21 @@ class TestGCRelease:
 
 
 class TestBuildInitialPrompt:
-    def test_joins_nouns_with_period(self) -> None:
+    def test_embeds_nouns_in_natural_sentence(self) -> None:
         prompt = _build_initial_prompt(["Claude Code", "GPT-4"])
-        assert prompt == "Claude Code GPT-4."
+        assert prompt == "This technical discussion covers Claude Code and GPT-4."
 
-    def test_empty_nouns(self) -> None:
+    def test_single_noun(self) -> None:
+        prompt = _build_initial_prompt(["Claude Code"])
+        assert prompt == "This technical discussion covers Claude Code."
+
+    def test_three_nouns_oxford_comma(self) -> None:
+        prompt = _build_initial_prompt(["Claude Code", "GPT-4", "PySide6"])
+        assert prompt == "This technical discussion covers Claude Code, GPT-4, and PySide6."
+
+    def test_empty_nouns_returns_empty_string(self) -> None:
         prompt = _build_initial_prompt([])
-        assert prompt == "."
+        assert prompt == ""
 
 
 class TestProperNounReplacement:

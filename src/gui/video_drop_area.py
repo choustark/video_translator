@@ -92,6 +92,26 @@ class VideoDropArea(QFrame):
         self._info_label.setVisible(False)
         layout.addWidget(self._info_label)
 
+    # ==================== 翻译状态切换 ====================
+
+    def set_translating(self, translating: bool) -> None:
+        """切换翻译中状态：禁用拖放，按钮变为"翻译中..."并禁用。
+
+        翻译结束后恢复为 loaded 状态（如已加载视频）或 idle 状态。
+        """
+        self.setAcceptDrops(not translating)
+        if translating:
+            self._select_file_btn.setText("翻译中...")
+            self._select_file_btn.setEnabled(False)
+        else:
+            self._select_file_btn.setText("选择文件")
+            self._select_file_btn.setEnabled(True)
+            if self._video_path is not None and self._video_info is not None:
+                info = self._video_info
+                self._set_loaded_state(info["file_name"], info["duration"], info["format"])
+            else:
+                self._set_idle_state()
+
     # ==================== 四状态视觉管理 ====================
 
     def _set_idle_state(self) -> None:

@@ -23,8 +23,21 @@ _DEFAULT_PROPER_NOUNS: list[str] = [
 
 
 def _build_initial_prompt(nouns: list[str]) -> str:
-    joined = " ".join(nouns)
-    return f"{joined}."
+    """将专有名词列表嵌入自然英文语句，作为 Whisper initial_prompt。
+
+    Whisper 的 initial_prompt 被视为"前文转录文本"，裸词列表不符合训练分布，
+    缺乏句法和语义锚定。自然语句格式能让模型在上下文约束下正确识别专有名词。
+    最重要的词放在句末（Whisper 对尾部 ~224 tokens 权重最高）。
+    """
+    if not nouns:
+        return ""
+    if len(nouns) == 1:
+        terms = nouns[0]
+    elif len(nouns) == 2:
+        terms = f"{nouns[0]} and {nouns[1]}"
+    else:
+        terms = ", ".join(nouns[:-1]) + ", and " + nouns[-1]
+    return f"This technical discussion covers {terms}."
 
 
 def _apply_proper_noun_replacements(
@@ -65,7 +78,7 @@ def _apply_proper_noun_replacements(
                         all_match = False
                         break
                     ratio = SequenceMatcher(None, clean_tokens[ti], clean_noun_parts[j]).ratio()
-                    if ratio < 0.55:
+                    if ratio < 0.40:
                         all_match = False
                         break
 

@@ -1,15 +1,37 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
 import yaml
+from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
 from src.exceptions import ConfigError
 
 logger = logging.getLogger("video_translator")
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_PATH = _PROJECT_ROOT / ".env"
+_ENV_API_KEY = "VIDEO_TRANSLATOR_API_KEY"
+
+
+def _load_dotenv(path: Path) -> dict[str, str]:
+    """加载 .env 文件，返回键值对字典。文件不存在时返回空字典。"""
+    if not path.exists():
+        return {}
+    return dotenv_values(str(path))  # type: ignore[no-any-return]
+
+
+def save_api_key_to_env(api_key: str, path: Path = ENV_PATH) -> None:
+    """将 API Key 写入 .env 文件，保留其他已有键值。"""
+    existing = _load_dotenv(path)
+    existing[_ENV_API_KEY] = api_key
+    lines = [f"{k}={v}" for k, v in existing.items()]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 
 # 中文口语基准语速（字/秒），用于翻译时长约束和 TTS 语速计算
 CHARS_PER_SEC = 4.0
@@ -125,11 +147,12 @@ def get_preset(name: str) -> AppConfig:
     return PRESETS[name].model_copy(deep=True)
 
 
-def load_config(path: Path) -> AppConfig:
-    """从 YAML 文件加载并校验应用配置。
+def load_config(path: Path, env_path: Path | None = None) -> AppConfig:
+    """从 YAML 文件加载并校验应用配置，通过 .env 注入机密。
 
     Args:
         path: YAML 配置文件的路径。
+        env_path: .env 文件路径，默认项目根目录下的 .env；不存在则跳过。
 
     Returns:
         校验通过的 ``AppConfig`` 实例。
@@ -159,13 +182,22 @@ def load_config(path: Path) -> AppConfig:
         )
 
     try:
-        return AppConfig.model_validate(raw)
+        config = AppConfig.model_validate(raw)
     except Exception as e:
         raise ConfigError(
             f"配置校验失败: {e}",
             stage="config",
             suggestion="检查必填字段和值的有效性",
         ) from e
+
+    env_path = env_path or ENV_PATH
+    env_values = _load_dotenv(env_path)
+    if _ENV_API_KEY in env_values:
+        config.translation.api_key = env_values[_ENV_API_KEY]
+    elif os.getenv(_ENV_API_KEY):
+        config.translation.api_key = os.environ[_ENV_API_KEY]
+
+    return config
 
 
 class _QuotedDumper(yaml.SafeDumper):
@@ -189,7 +221,7 @@ def save_config(config: AppConfig, path: Path) -> None:
         path: 目标文件路径。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = config.model_dump()
+    data = config.model_dump(exclude={"translation": {"api_key": True}})
     content = yaml.dump(
         data,
         Dumper=_QuotedDumper,

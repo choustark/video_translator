@@ -173,6 +173,12 @@ class MainWindow(QMainWindow):
             self._translate_btn.setEnabled(self._validation_passed)
 
     def _on_translate_clicked(self) -> None:
+        if self._translating:
+            logger.info("用户中止翻译")
+            if self._pipeline is not None:
+                self._pipeline.abort()
+            return
+
         if not self._translate_btn.isEnabled():
             return
         config = self._config_panel.get_config()
@@ -190,9 +196,10 @@ class MainWindow(QMainWindow):
             "翻译启动: %s，预设: %s", video_path, config.preset
         )
         self._translating = True
-        self._translate_btn.setText("翻译中...")
-        self._translate_btn.setEnabled(False)
+        self._translate_btn.setText("中止翻译")
+        self._translate_btn.setEnabled(True)
         self._config_panel.setEnabled(False)
+        self._video_drop_area.set_translating(True)
         self._pipeline_progress.reset()
         self._transcript_panel.reset()
 
@@ -207,12 +214,16 @@ class MainWindow(QMainWindow):
         self._translating = False
         self._translate_btn.setText("开始翻译")
         self._config_panel.setEnabled(True)
+        self._video_drop_area.set_translating(False)
         has_video = self._video_drop_area.video_path is not None
         self._translate_btn.setEnabled(has_video and self._validation_passed)
         self._pipeline = None
 
     def _on_stage_failed(self, stage: str, error: str) -> None:
-        """管线阶段失败时显示错误弹窗。"""
+        """管线阶段失败时显示错误弹窗。用户主动中止则跳过。"""
+        if self._pipeline is not None and self._pipeline._abort_requested.is_set():
+            logger.info("用户中止，跳过失败弹窗 | stage=%s | error=%s", stage, error)
+            return
         QMessageBox.critical(
             self,
             f"翻译失败 — {stage}",

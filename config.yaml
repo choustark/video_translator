@@ -1,23 +1,22 @@
 "asr":
   "engine": "mlx-whisper"
-  "model_path": "models/asr/whisper-medium"
+  "model_path": "/Users/chou/work_space/video_translator/models/asr/whisper-medium-mlx/"
   "language": "en"
   "proper_nouns": []
 "translation":
-  "engine": "glm"
-  "api_key": "your-api-key-here"
+  "engine": "deepseek"
   "model": "glm-4-flash"
   "source_lang": "EN"
   "target_lang": "ZH"
 "tts":
-  "engine": "edge-tts"
-  "model_path": ""
+  "engine": "cosyvoice"
+  "model_path": "/Users/chou/work_space/video_translator/models/tts/CosyVoice-300M-SFT/"
   "voice": "default"
   "speed": 1.0
-  "conda_python_path": ""
-  "cosyvoice_source_path": ""
+  "conda_python_path": "/opt/homebrew/Caskroom/miniconda/base/envs/cosyvoice/bin/python"
+  "cosyvoice_source_path": "/Users/chou/open_project/CosyVoice"
 "subtitle":
-  "style": "classic_white"
+  "style": "white_clean"
 "memory":
   "warning_gb": 6.0
-"preset": "high_quality"
+"preset": "custom"

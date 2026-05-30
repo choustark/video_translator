@@ -47,15 +47,24 @@ pip install -e .
 
 ### 下载模型
 
-ASR 模型（mlx-whisper 格式）需要手动下载到 `models/` 目录：
+项目提供一键下载脚本，自动检测平台并拉取所需模型：
 
 ```bash
-mkdir -p models/asr
-# 从 HuggingFace 下载 mlx-whisper 模型，例如 whisper-medium-mlx
-# 放置到 models/asr/whisper-medium-mlx/
+# 安装下载依赖
+pip install huggingface_hub[hf_transfer]
+
+# 自动检测平台，下载推荐模型（推荐）
+python scripts/download_models.py --auto
+
+# 查看所有可用模型 + 平台兼容性
+python scripts/download_models.py --list
 ```
 
-TTS 模型（CosyVoice）参考 [CosyVoice 部署指南](docs/cosyvoice-deployment-guide.md)。如果不想用 CosyVoice，可使用 Edge-TTS（云端免费，零配置）。
+**Apple Silicon Mac** 会自动下载 mlx-whisper + ChatTTS，**Windows / Linux** 会自动下载 faster-whisper + ChatTTS。
+
+如需 CosyVoice（更高质量的本地 TTS），需手动部署，见 [CosyVoice 部署指南](docs/cosyvoice-deployment-guide.md)。不想折腾本地 TTS 可用 Edge-TTS（云端免费，零配置）。
+
+详细说明见 [模型下载指南](docs/model-download-guide.md)。
 
 ### API Key
 
@@ -100,7 +109,7 @@ python main.py
 | 桌面框架 | PySide6 | Qt 官方 Python 绑定 |
 | ASR | mlx-whisper | Apple Silicon MPS 加速 |
 | 翻译 | GLM / DeepSeek / OpenAI / DeepL | 策略模式，可扩展 |
-| TTS | CosyVoice / Edge-TTS / sherpa-onnx | 本地优先，云端降级 |
+| TTS | CosyVoice / ChatTTS / Edge-TTS | 本地优先，云端降级 |
 | 音视频处理 | ffmpeg | 拖入视频、提取、合成、字幕烧录 |
 | 配置 | YAML + pydantic | 类型安全校验 |
 | Python | 3.13+ | 利用最新语言特性 |
@@ -123,7 +132,8 @@ video_translator/
 │   ├── models.py           # 数据模型
 │   └── validators.py       # 翻译前校验
 ├── tests/                  # 测试（pytest）
-├── scripts/                # 辅助脚本
+├── docs/                   # 文档（模型下载指南等）
+├── scripts/                # 辅助脚本（模型下载等）
 └── models/                 # AI 模型文件（.gitignore）
 ```
 
@@ -154,15 +164,24 @@ uv run mypy src/
 - [x] 配置管理（多方案 + 预设 + 记忆）
 - [x] 三种输出（合成视频 + SRT + 音频）
 
-### v1.1（质量提升） 🔄
+### v1.1（质量提升） ✅
 
 - [x] 多翻译后端（DeepSeek / OpenAI）
 - [x] 用户中止机制
 - [x] API Key 安全存储（.env）
-- [ ] 断点续传
-- [ ] SRT 导入导出
-- [ ] 内嵌播放器预览
-- [ ] 字幕样式自定义
+- [x] 语速自适应（居中静音填充 + atempo 加速）
+- [x] 字幕样式预设系统
+- [x] 翻译时长约束 + 口语化优化
+- [x] ASR 专有名词引导 + 片段合并
+
+### v1.2（界面精简 + 跨平台） 🔜
+
+- [ ] 移除语速滑块（已由三层自动化覆盖）
+- [ ] 音频提取实时进度
+- [ ] FasterWhisperEngine 实现（跨平台 ASR）
+- [ ] Windows 跨平台支持
+- [ ] ChatTTS 引擎集成
+- [ ] ASR/翻译结果一键复制
 
 ### v2.0（体验进阶）
 

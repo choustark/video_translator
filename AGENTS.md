@@ -4,7 +4,7 @@
 
 video_translator 是一个 PySide6 桌面应用，面向有技术背景的个人用户，在 Apple Silicon（M5, 24GB）上将英文视频翻译为中文配音视频。定位为**管线编排器**——用户自带模型，软件只做编排。
 
-目标硬件：MacBook Air M5，单次处理 ≤10 分钟视频。
+目标硬件：MacBook Air M5，单次处理 ≤30 分钟视频。
 
 ## 用户画像
 
@@ -41,7 +41,7 @@ video_translator 是一个 PySide6 桌面应用，面向有技术背景的个人
 3. 后期对齐：静音填充 + 词间隙微裁剪（**v1 实现此层**）
 4. 全局优化：整段话节奏平衡
 
-v1 用简单方案先跑通，不提前优化。
+v1 实现了第 3 层（居中静音填充 + rubberband 变速），v1.1 增强了第 1 层（翻译 prompt 时长约束）和第 2 层（Edge-TTS rate 参数），四层策略已有三层落地。
 
 ## 六阶段管线
 
@@ -55,7 +55,7 @@ v1 用简单方案先跑通，不提前优化。
 
 - **Pipe-and-Filter** + **Strategy Pattern**
 - 每个环节（ASR/翻译/TTS）独立可选、可替换
-- ASR 和 TTS 顺序加载、顺序释放（ASR 完成后主动释放 MLX Metal 缓存），峰值内存 ~5GB
+- ASR 和 TTS 顺序加载、顺序释放（ASR 完成后主动释放 MLX Metal 缓存：del + gc.collect() + mx.clear_cache()），峰值内存 ~7GB
 - ASR 执行时后台预加载 TTS 模型
 
 ## 预设配置方案
@@ -69,8 +69,8 @@ v1 用简单方案先跑通，不提前优化。
 
 ## 分阶段交付
 
-- **v1（MVP）：** 跑通完整管线，PySide6 UI + 翻译前校验 + 管线可视化 + 配置管理
-- **v1.1（质量提升）：** 多翻译后端、断点续传、SRT 导入导出、内嵌播放器、字幕样式自定义
+- **v1（MVP）：** ✅ 跑通完整管线，PySide6 UI + 翻译前校验 + 管线可视化 + 配置管理 + 错误恢复
+- **v1.1（质量提升）：** ✅ ASR 专有名词/碎片段、翻译时长约束、rubberband 变速、Edge-TTS 语速控制、配置面板 UX 修补、字幕样式预设、abort 机制、内存阈值统一、DeepSeek 翻译后端、API Key 安全存储
 - **v2.0（体验进阶）：** 长视频分段、单句编辑重合成、多语言、唇形同步、多说话人识别
 - **v3.0（差异化）：** GPT-SoVITS 声音克隆、dmg/pkg 安装包、批量队列、产品正式命名
 
@@ -87,27 +87,43 @@ v1 用简单方案先跑通，不提前优化。
 
 - [x] 产品技术规格 → `_bmad-output/planning-artifacts/product-technical-spec-2026-05-09.md`
 - [x] PRD → `_bmad-output/planning-artifacts/prd.md`（46 条 FR + 19 条 NFR）
+- [x] PRD v1.1 → `_bmad-output/planning-artifacts/prd-v1.1.md`（FR44~FR58，15 条新增）
 
 ### 3-solutioning ✅ 已完成
 
 - [x] UX 设计 → `_bmad-output/planning-artifacts/ux-design-specification.md`
 - [x] 架构设计 → `_bmad-output/planning-artifacts/architecture.md`
 - [x] Epic/Story 拆分 → `_bmad-output/planning-artifacts/epics.md`
+- [x] Epic/Story v1.1 拆分 → `_bmad-output/planning-artifacts/epics-v1.1.md`
 - [x] 实施就绪检查 → `_bmad-output/planning-artifacts/implementation-readiness-report-2026-05-12.md`
 
-### 4-implementation 🔄 进行中
+### 4-implementation ✅ 已完成
 
 当前进度详见 `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+**v1（5 Epic，20 Story）：**
 
 | Epic | 状态 | 说明 |
 |------|------|------|
 | Epic 1: 项目基础与配置管理 | ✅ done | 6 个 story 全部完成 |
 | Epic 2: 桌面应用外壳与视频输入 | ✅ done | 3 个 story 全部完成 |
 | Epic 3: 翻译前校验 | ✅ done | 2 个 story 全部完成 |
-| **Epic 4: 端到端翻译管线** | **✅ done** | 4-1~4-7 全部完成，含 CosyVoice subprocess 桥 (2026-05-22) |
-| Epic 5: 错误恢复与系统韧性 | backlog | 还没开始 |
+| Epic 4: 端到端翻译管线 | ✅ done | 4-1~4-7 全部完成，含 CosyVoice subprocess 桥 |
+| Epic 5: 错误恢复与系统韧性 | ✅ done | 2 个 story 全部完成 |
 
-**下一步：** 进入 v1.1 规划，或对 CosyVoice 集成做进一步测试
+**v1.1（5 Epic，13 Story）：**
+
+| Epic | 状态 | 说明 |
+|------|------|------|
+| Epic 1-v1.1: ASR 质量提升 | ✅ done | 专有名词引导 + 碎片段合并 |
+| Epic 2-v1.1: 翻译与 TTS 质量提升 | ✅ done | 时长约束 + rubberband + Edge-TTS rate + DeepSeek provider |
+| Epic 3-v1.1: 配置面板 UX 修补 | ✅ done | 进度消息 + 预设追踪 + 引擎切换 + 资源预估 |
+| Epic 4-v1.1: 字幕样式预设 | ✅ done | 3 种预设 + force_style 参数化 + 持久化 + UI |
+| Epic 5-v1.1: 稳定性修复 | ✅ done | abort 机制 + 内存阈值统一 + API Key 安全 |
+
+**度量：** v1+v1.1 共 33 Story，497 测试，全部 ruff+mypy+pytest 通过。
+
+**下一步：** 决定进入 v2.0（长视频分段、单句编辑）或 v1.2（处理剩余可选债务 + 原 v1.1 路线图剩余项）。详见 `_bmad-output/implementation-artifacts/deferred-work.md`。
 
 ### 输入文档说明
 
@@ -124,16 +140,18 @@ video_translator/
 │   ├── brainstorming/           # 头脑风暴产出
 │   ├── planning-artifacts/      # PRD、规格、调研、架构、UX 设计
 │   │   ├── prd.md               # 主 PRD 文档
+│   │   ├── prd-v1.1.md          # v1.1 增量 PRD（FR44~FR58）
 │   │   ├── architecture.md      # 架构设计
 │   │   ├── ux-design-specification.md  # UX 设计规格
 │   │   ├── epics.md             # Epic/Story 拆分
+│   │   ├── epics-v1.1.md        # v1.1 Epic/Story 拆分
 │   │   ├── implementation-readiness-report-2026-05-12.md
 │   │   ├── product-technical-spec-2026-05-09.md
 │   │   └── research/            # 技术调研
 │   └── implementation-artifacts/ # 开发阶段产物（story 文件、sprint 状态、retro）
 │       ├── sprint-status.yaml   # Sprint 进度跟踪（权威数据源）
 │       ├── deferred-work.md     # 推迟到后续的已知问题
-│       └── epic-*-retro-*.md    # Epic 回顾
+│       └── epic-*-retro-*.md    # Epic 回顾（v1: 5 个 + v1.1: 1 个整体回顾）
 ├── src/                         # 源代码
 │   ├── asr/                     # ASR 引擎（mlx-whisper）
 │   ├── translation/             # 翻译后端（GLM/DeepSeek/本地 NLLB）

@@ -1,202 +1,204 @@
 # Video Translator
 
-Apple Silicon 原生的英文→中文视频翻译工具。拖入视频，一键输出中文配音视频 + 字幕。
+> [中文版本](README_zh.md)
 
-## 为什么做这个
+An Apple Silicon-native English-to-Chinese video translation tool. Drop in a video, get Chinese dubbed video + subtitles with one click.
 
-市面上的视频翻译工具（pyvideotrans、VideoLingo）把 AI 模型打包给你用，你被工具的选择锁定。video_translator 反过来——**你自带模型，软件只做编排**。新模型发布后直接切换，不用等软件更新。
+## Why
 
-## 项目亮点
+Existing video translation tools (pyvideotrans, VideoLingo) bundle AI models for you — you're locked into their choices. **video_translator flips this: you bring the models, the software does the orchestration.** Switch to a new model the day it's released, no waiting for a software update.
 
-- **模型自主权** — ASR / 翻译 / TTS 每个环节独立可选、可替换（策略模式架构）
-- **Apple Silicon 原生优化** — mlx-whisper + MPS/Metal 加速，其他同类项目均未实现
-- **极低成本** — 翻译走 API（GLM/DeepSeek），ASR/TTS 本地免费，10 分钟视频约 ¥0.3
-- **语速自适应对齐** — 四层递进策略解决中文配音与英文画面的时间同步问题
-- **三种输出** — 合成视频（硬字幕烧录）+ SRT 字幕 + 中文音频，拿到所有材料不用二次处理
-- **翻译前校验** — ffmpeg / 模型文件 / API Key / 格式 / 时长全检查，不开始就拦截问题
+## Highlights
 
-## 六阶段管线
+- **Model sovereignty** — ASR / Translation / TTS: each stage independently selectable and replaceable (Strategy pattern architecture)
+- **Apple Silicon native** — mlx-whisper + MPS/Metal acceleration; no other open-source project ships this
+- **Ultra-low cost** — Translation via API (GLM/DeepSeek), ASR/TTS run locally for free. ~$0.04 per 10-minute video
+- **Speed-adaptive alignment** — Four-layer progressive strategy to sync Chinese dubbing with English video timing
+- **Three output artifacts** — Composited video (hard-subbed) + SRT subtitles + Chinese audio. Everything you need, no post-processing
+- **Pre-translation validation** — ffmpeg / model files / API key / format / duration all checked upfront. Problems caught before you start.
+
+## Six-Stage Pipeline
 
 ```
-音频提取(ffmpeg) → ASR(mlx-whisper) → 翻译(API) → TTS(CosyVoice/Edge-TTS) → 语速自适应 → 合成(ffmpeg)
+Audio Extraction(ffmpeg) → ASR(mlx-whisper) → Translation(API) → TTS(CosyVoice/Edge-TTS) → Speed-Adaptive → Compositing(ffmpeg)
 ```
 
-## 安装
+## Installation
 
-### 前置条件
+### Prerequisites
 
 - macOS 12+ (Apple Silicon)
 - Python 3.13+
-- [ffmpeg](https://ffmpeg.org/)（`brew install ffmpeg`）
-- 16GB+ 内存（推荐 24GB）
-- 10-15GB 磁盘空间（存放模型）
+- [ffmpeg](https://ffmpeg.org/) (`brew install ffmpeg`)
+- 16GB+ RAM (24GB recommended)
+- 10-15GB disk space (for models)
 
-### 安装步骤
+### Setup
 
 ```bash
-# 克隆仓库
+# Clone the repo
 git clone git@github.com:choustark/video_translator.git
 cd video_translator
 
-# 安装依赖（推荐用 uv）
+# Install dependencies (uv recommended)
 uv sync
 
-# 或用 pip
+# Or with pip
 pip install -e .
 ```
 
-### 下载模型
+### Download Models
 
-项目提供一键下载脚本，自动检测平台并拉取所需模型：
+A one-click download script auto-detects your platform and pulls the required models:
 
 ```bash
-# 安装下载依赖
+# Install download dependency
 pip install huggingface_hub[hf_transfer]
 
-# 自动检测平台，下载推荐模型（推荐）
+# Auto-detect platform, download recommended models (recommended)
 python scripts/download_models.py --auto
 
-# 查看所有可用模型 + 平台兼容性
+# List all available models + platform compatibility
 python scripts/download_models.py --list
 ```
 
-**Apple Silicon Mac** 会自动下载 mlx-whisper + ChatTTS，**Windows / Linux** 会自动下载 faster-whisper + ChatTTS。
+**Apple Silicon Mac** automatically downloads mlx-whisper + ChatTTS. **Windows / Linux** automatically downloads faster-whisper + ChatTTS.
 
-如需 CosyVoice（更高质量的本地 TTS），需手动部署，见 [CosyVoice 部署指南](docs/cosyvoice-deployment-guide.md)。不想折腾本地 TTS 可用 Edge-TTS（云端免费，零配置）。
+For CosyVoice (higher-quality local TTS), manual setup is required — see the [CosyVoice Deployment Guide](docs/cosyvoice-deployment-guide.md) (Chinese). Prefer zero-config? Use Edge-TTS (cloud, free).
 
-详细说明见 [模型下载指南](docs/model-download-guide.md)。
+See the [Model Download Guide](docs/model-download-guide.md) (Chinese) for details.
 
 ### API Key
 
-翻译后端需要 API Key。创建 `.env` 文件：
+The translation backend requires an API key. Create a `.env` file:
 
 ```bash
-# GLM（智谱）— 默认后端，成本最低
+# GLM (Zhipu) — default backend, lowest cost
 GLM_API_KEY=your_key_here
 
 # DeepSeek
 DEEPSEEK_API_KEY=your_key_here
 ```
 
-## 使用
+## Usage
 
 ```bash
-# 启动桌面应用
+# Launch the desktop app
 python main.py
 ```
 
-1. **配置** — 在设置面板中指定 ASR 模型路径、翻译后端 + API Key、TTS 引擎
-2. **拖入视频** — 将 mp4/mkv/mov/avi 视频拖入主界面
-3. **校验** — 系统自动检查环境，绿色勾表示一切就绪
-4. **开始翻译** — 点击按钮，六阶段管线自动执行，实时显示进度
-5. **获取结果** — 翻译完成后在 `output/` 目录找到三种产物
+1. **Configure** — Set ASR model path, translation backend + API key, and TTS engine in the settings panel
+2. **Drop video** — Drag and drop an mp4/mkv/mov/avi video into the main window
+3. **Validate** — The system auto-checks your environment; green checkmarks mean you're good to go
+4. **Translate** — Click the button and the six-stage pipeline runs automatically with real-time progress
+5. **Get results** — Find all three output artifacts in the `output/` directory
 
-### 预设配置方案
+### Preset Configurations
 
-| 方案 | ASR | 翻译 | TTS | 内存占用 |
-|------|-----|------|-----|---------|
-| 高质量（默认） | large-v3-turbo | GLM API | CosyVoice | ~7GB |
-| 均衡 | medium | DeepSeek | CosyVoice | ~5.5GB |
-| 快速 | tiny | DeepSeek | Edge-TTS | ~0.5GB |
-| 全离线 | medium | NLLB 本地 | CosyVoice | ~8GB |
+| Preset | ASR | Translation | TTS | RAM |
+|--------|-----|-------------|-----|-----|
+| High Quality (default) | large-v3-turbo | GLM API | CosyVoice | ~7GB |
+| Balanced | medium | DeepSeek | CosyVoice | ~5.5GB |
+| Fast | tiny | DeepSeek | Edge-TTS | ~0.5GB |
+| Fully Offline | medium | NLLB (local) | CosyVoice | ~8GB |
 
-也可保存自定义方案，按视频类型灵活切换。
+You can also save custom presets and switch between them for different video types.
 
-## 技术栈
+## Tech Stack
 
-| 组件 | 技术 | 说明 |
-|------|------|------|
-| 桌面框架 | PySide6 | Qt 官方 Python 绑定 |
-| ASR | mlx-whisper | Apple Silicon MPS 加速 |
-| 翻译 | GLM / DeepSeek / OpenAI / DeepL | 策略模式，可扩展 |
-| TTS | CosyVoice / ChatTTS / Edge-TTS | 本地优先，云端降级 |
-| 音视频处理 | ffmpeg | 拖入视频、提取、合成、字幕烧录 |
-| 配置 | YAML + pydantic | 类型安全校验 |
-| Python | 3.13+ | 利用最新语言特性 |
+| Component | Technology | Notes |
+|-----------|------------|-------|
+| Desktop Framework | PySide6 | Official Qt Python bindings |
+| ASR | mlx-whisper | Apple Silicon MPS acceleration |
+| Translation | GLM / DeepSeek / OpenAI / DeepL | Strategy pattern, extensible |
+| TTS | CosyVoice / ChatTTS / Edge-TTS | Local-first, cloud fallback |
+| AV Processing | ffmpeg | Video ingest, extraction, compositing, subtitle burn-in |
+| Config | YAML + pydantic | Type-safe validation |
+| Python | 3.13+ | Leveraging latest language features |
 
-## 项目结构
+## Project Structure
 
 ```
 video_translator/
-├── main.py                 # 入口
-├── config.yaml             # 默认配置
-├── pyproject.toml          # 项目配置
+├── main.py                 # Entry point
+├── config.yaml             # Default configuration
+├── pyproject.toml          # Project metadata
 ├── src/
-│   ├── asr/                # ASR 引擎（mlx-whisper）
-│   ├── translation/        # 翻译后端（GLM/DeepSeek/...）
-│   ├── tts/                # TTS 引擎（CosyVoice/Edge-TTS）
-│   ├── composer/           # 音视频合成 + 语速自适应
-│   ├── gui/                # PySide6 UI 组件
-│   ├── pipeline.py         # 管线编排器
-│   ├── config.py           # 配置管理
-│   ├── models.py           # 数据模型
-│   └── validators.py       # 翻译前校验
-├── tests/                  # 测试（pytest）
-├── docs/                   # 文档（模型下载指南等）
-├── scripts/                # 辅助脚本（模型下载等）
-└── models/                 # AI 模型文件（.gitignore）
+│   ├── asr/                # ASR engines (mlx-whisper)
+│   ├── translation/        # Translation backends (GLM/DeepSeek/...)
+│   ├── tts/                # TTS engines (CosyVoice/Edge-TTS)
+│   ├── composer/           # AV compositing + speed-adaptive alignment
+│   ├── gui/                # PySide6 UI components
+│   ├── pipeline.py         # Pipeline orchestrator
+│   ├── config.py           # Config management
+│   ├── models.py           # Data models
+│   └── validators.py       # Pre-translation validation
+├── tests/                  # Tests (pytest)
+├── docs/                   # Documentation (model download guide, etc.)
+├── scripts/                # Utility scripts (model download, etc.)
+└── models/                 # AI model files (.gitignore)
 ```
 
-## 开发
+## Development
 
 ```bash
-# 安装开发依赖
+# Install dev dependencies
 uv sync --group dev
 
-# 运行测试
+# Run tests
 uv run pytest
 
-# 代码检查
+# Lint
 uv run ruff check src/ tests/
 
-# 类型检查
+# Type check
 uv run mypy src/
 ```
 
-## 路线图
+## Roadmap
 
-### v1（当前 — MVP） ✅
+### v1 (MVP) ✅
 
-- [x] PySide6 桌面 UI（拖入视频 + 配置面板 + 进度展示）
-- [x] 六阶段管线完整跑通
-- [x] 翻译前校验（ffmpeg / 模型 / API Key / 格式 / 时长）
-- [x] 语速自适应（居中静音填充 + atempo 加速）
-- [x] 配置管理（多方案 + 预设 + 记忆）
-- [x] 三种输出（合成视频 + SRT + 音频）
+- [x] PySide6 desktop UI (drag-and-drop video + config panel + progress display)
+- [x] End-to-end six-stage pipeline
+- [x] Pre-translation validation (ffmpeg / model / API key / format / duration)
+- [x] Speed-adaptive alignment (centered silence padding + atempo speed adjustment)
+- [x] Config management (multi-preset + save + restore)
+- [x] Three output artifacts (composited video + SRT + audio)
 
-### v1.1（质量提升） ✅
+### v1.1 (Quality Improvements) ✅
 
-- [x] 多翻译后端（DeepSeek / OpenAI）
-- [x] 用户中止机制
-- [x] API Key 安全存储（.env）
-- [x] 语速自适应（居中静音填充 + atempo 加速）
-- [x] 字幕样式预设系统
-- [x] 翻译时长约束 + 口语化优化
-- [x] ASR 专有名词引导 + 片段合并
+- [x] Multiple translation backends (DeepSeek / OpenAI)
+- [x] User abort mechanism
+- [x] Secure API key storage (.env)
+- [x] Speed-adaptive alignment (centered silence padding + atempo)
+- [x] Subtitle style preset system
+- [x] Translation duration constraint + colloquial optimization
+- [x] ASR proper noun guidance + fragment merging
 
-### v1.2（界面精简 + 跨平台） 🔜
+### v1.2 (UI Streamlining + Cross-Platform) 🔜
 
-- [ ] 移除语速滑块（已由三层自动化覆盖）
-- [ ] 音频提取实时进度
-- [ ] FasterWhisperEngine 实现（跨平台 ASR）
-- [ ] Windows 跨平台支持
-- [ ] ChatTTS 引擎集成
-- [ ] ASR/翻译结果一键复制
+- [ ] Remove speed slider (replaced by three-layer automation)
+- [ ] Real-time audio extraction progress
+- [ ] FasterWhisperEngine implementation (cross-platform ASR)
+- [ ] Windows cross-platform support
+- [ ] ChatTTS engine integration
+- [ ] One-click copy ASR/translation results
 
-### v2.0（体验进阶）
+### v2.0 (Advanced Experience)
 
-- [ ] 长视频分段处理（>10 分钟）
-- [ ] 单句编辑重合成
-- [ ] 多语言支持
-- [ ] 唇形同步（Wav2Lip / MuseTalk）
-- [ ] 多说话人识别（WhisperX）
+- [ ] Long video segmentation (>10 minutes)
+- [ ] Per-sentence re-synthesis
+- [ ] Multi-language support
+- [ ] Lip sync (Wav2Lip / MuseTalk)
+- [ ] Multi-speaker recognition (WhisperX)
 
-### v3.0（差异化）
+### v3.0 (Differentiation)
 
-- [ ] GPT-SoVITS 声音克隆
-- [ ] dmg / pkg 安装包
-- [ ] 批量队列
-- [ ] 产品正式命名
+- [ ] GPT-SoVITS voice cloning
+- [ ] dmg / pkg installer
+- [ ] Batch queue
+- [ ] Official product naming
 
 ## License
 

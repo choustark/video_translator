@@ -178,12 +178,12 @@ uv run mypy src/
 
 ### v1.2 (UI Streamlining + Cross-Platform) 🔜
 
-- [ ] Remove speed slider (replaced by three-layer automation)
-- [ ] Real-time audio extraction progress
-- [ ] FasterWhisperEngine implementation (cross-platform ASR)
-- [ ] Windows cross-platform support
-- [ ] ChatTTS engine integration
-- [ ] One-click copy ASR/translation results
+- [x] Remove speed slider (replaced by three-layer automation)
+- [x] Real-time audio extraction progress
+- [x] FasterWhisperEngine implementation (cross-platform ASR)
+- [x] Windows cross-platform support
+- [x] ChatTTS engine integration
+- [x] One-click copy ASR/translation results
 
 ### v2.0 (Advanced Experience)
 

@@ -178,12 +178,12 @@ uv run mypy src/
 
 ### v1.2（界面精简 + 跨平台） 🔜
 
-- [ ] 移除语速滑块（已由三层自动化覆盖）
-- [ ] 音频提取实时进度
-- [ ] FasterWhisperEngine 实现（跨平台 ASR）
-- [ ] Windows 跨平台支持
-- [ ] ChatTTS 引擎集成
-- [ ] ASR/翻译结果一键复制
+- [x] 移除语速滑块（已由三层自动化覆盖）
+- [x] 音频提取实时进度
+- [x] FasterWhisperEngine 实现（跨平台 ASR）
+- [x] Windows 跨平台支持
+- [x] ChatTTS 引擎集成
+- [x] ASR/翻译结果一键复制
 
 ### v2.0（体验进阶）
 

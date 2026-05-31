@@ -176,7 +176,7 @@ uv run mypy src/
 - [x] Translation duration constraint + colloquial optimization
 - [x] ASR proper noun guidance + fragment merging
 
-### v1.2 (UI Streamlining + Cross-Platform) 🔜
+### v1.2 (UI Streamlining + Cross-Platform) ✅
 
 - [x] Remove speed slider (replaced by three-layer automation)
 - [x] Real-time audio extraction progress
@@ -185,7 +185,7 @@ uv run mypy src/
 - [x] ChatTTS engine integration
 - [x] One-click copy ASR/translation results
 
-### v2.0 (Advanced Experience)
+### v2.0 (Advanced Experience) 🔜
 
 - [ ] Long video segmentation (>10 minutes)
 - [ ] Per-sentence re-synthesis

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import shutil
 import subprocess
 import threading
@@ -12,10 +13,14 @@ from src.config import AppConfig
 from src.exceptions import PipelineError
 from src.models import PipelineResult, StageState, StageStatus, SubtitleSegment
 from src.signals import PipelineSignals
+from src.utils.platform_utils import get_ffmpeg_install_hint
 
 logger = logging.getLogger("video_translator")
 
 STAGE_NAMES = ["音频提取", "ASR", "翻译", "TTS", "语速自适应", "合成"]
+
+_TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+_EXTRACT_AUDIO_TIMEOUT = 60
 
 
 class Pipeline:
@@ -198,6 +203,58 @@ class Pipeline:
 
     # ── 阶段 1: 音频提取 ────────────────────────────────────
 
+    @staticmethod
+    def _parse_ffmpeg_time(line: str) -> float | None:
+        """解析 ffmpeg stderr 中的 time=HH:MM:SS.ms 为秒数。"""
+        m = _TIME_RE.search(line)
+        if not m:
+            return None
+        hours, minutes, seconds = int(m.group(1)), int(m.group(2)), float(m.group(3))
+        return hours * 3600 + minutes * 60 + seconds
+
+    def _get_video_duration_safe(self, video_path: Path) -> float:
+        """获取视频总时长，失败时返回 0（无进度模式）。"""
+        try:
+            from src.composer.ffmpeg_wrapper import FFmpegWrapper
+            return FFmpegWrapper().get_video_duration(video_path)
+        except Exception:
+            logger.warning("音频提取 | 无法获取视频时长，进度将不可用")
+            return 0.0
+
+    def _read_ffmpeg_progress(
+        self, proc: subprocess.Popen[bytes], duration: float,
+    ) -> list[str]:
+        """逐行读取 ffmpeg stderr，解析进度并 emit 信号。返回 stderr 行供错误报告。"""
+        start = time.monotonic()
+        stderr = proc.stderr
+        if stderr is None:
+            proc.wait(timeout=_EXTRACT_AUDIO_TIMEOUT)
+            return []
+
+        lines: list[str] = []
+        for raw_line in stderr:
+            if time.monotonic() - start > _EXTRACT_AUDIO_TIMEOUT:
+                proc.terminate()
+                proc.wait(timeout=5)
+                raise PipelineError(
+                    "音频提取超时（60秒）",
+                    stage="音频提取",
+                    suggestion="请确认视频文件不是过大或损坏",
+                )
+
+            self._check_abort()
+
+            line = raw_line.decode("utf-8", errors="replace")
+            lines.append(line)
+
+            current = self._parse_ffmpeg_time(line)
+            if current is not None and duration > 0:
+                progress = min(current / duration, 1.0)
+                self.signals.stage_progress.emit("音频提取", progress)
+
+        proc.wait(timeout=5)
+        return lines
+
     def _extract_audio(self, video_path: Path, temp_dir: Path) -> Path:
         """通过 ffmpeg 从视频提取 WAV 音频（16kHz 单声道 PCM）。"""
         output_path = temp_dir / "audio.wav"
@@ -211,32 +268,34 @@ class Pipeline:
             "-y",
             str(output_path),
         ]
+
+        duration = self._get_video_duration_safe(video_path)
+
         try:
-            subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=60,
-                check=True,
+            proc = subprocess.Popen(
+                cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL,
             )
-        except subprocess.CalledProcessError as e:
-            stderr_text = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            raise PipelineError(
-                f"音频提取失败: {stderr_text[:200]}",
-                stage="音频提取",
-                suggestion="请确认视频文件有效且 ffmpeg 已安装",
-            ) from e
-        except subprocess.TimeoutExpired as e:
-            raise PipelineError(
-                "音频提取超时（60秒）",
-                stage="音频提取",
-                suggestion="请确认视频文件不是过大或损坏",
-            ) from e
         except FileNotFoundError as e:
             raise PipelineError(
                 "ffmpeg 未找到",
                 stage="音频提取",
-                suggestion="请安装 ffmpeg: brew install ffmpeg",
+                suggestion=f"请安装 ffmpeg: {get_ffmpeg_install_hint()}",
             ) from e
+
+        self._active_processes.append(proc)
+        try:
+            stderr_lines = self._read_ffmpeg_progress(proc, duration)
+        finally:
+            if proc in self._active_processes:
+                self._active_processes.remove(proc)
+
+        if proc.returncode != 0:
+            stderr_tail = "".join(stderr_lines)[-200:]
+            raise PipelineError(
+                f"音频提取失败: {stderr_tail}",
+                stage="音频提取",
+                suggestion="请确认视频文件有效且 ffmpeg 已安装",
+            )
 
         logger.info("音频提取 | output=%s", output_path)
         return output_path
@@ -244,7 +303,7 @@ class Pipeline:
     # ── 占位阶段（后续 Story 实现） ───────────────────────────
 
     def _run_asr(self, audio_path: Path) -> list[SubtitleSegment]:
-        """ASR 语音识别 — 调用 mlx-whisper 引擎。"""
+        """ASR 语音识别。"""
         from src.asr import create_asr_engine
         from src.models import ProgressEvent
 
@@ -304,8 +363,18 @@ class Pipeline:
 
         return segments
 
+    _DEGRADATION_CHAIN: dict[str, str | None] = {
+        "cosyvoice": "chattts",
+        "chattts": "edge-tts",
+        "edge-tts": None,
+    }
+
     def _run_tts(self, segments: list[SubtitleSegment], temp_dir: Path) -> list[SubtitleSegment]:
-        """TTS 语音合成 — 调用 TTS 引擎，支持 CosyVoice→Edge-TTS 降级。"""
+        """TTS 语音合成 — 调用 TTS 引擎，支持三级降级链。
+
+        降级顺序：CosyVoice → ChatTTS → Edge-TTS。
+        已尝试过的引擎不会被重复尝试，避免循环降级。
+        """
         from src.config import TTSConfig
         from src.models import ProgressEvent
         from src.tts import create_tts_engine
@@ -321,40 +390,47 @@ class Pipeline:
             self._check_abort()
             self.signals.stage_progress.emit(event.stage, event.progress)
 
-        try:
-            engine = create_tts_engine(self.config.tts)
-            segments = engine.synthesize(
-                segments, temp_dir, progress_callback,
-                process_registry=self._active_processes,
-            )
-        except (PipelineError, MemoryError, RuntimeError, ImportError) as e:
-            if self.config.tts.engine == "cosyvoice":
-                degraded_msg = str(e) or type(e).__name__
-                logger.warning(
-                    'TTS | DEGRADED | msg="%s" | fallback="edge-tts"',
-                    degraded_msg,
-                )
-                self.signals.tts_degraded.emit("cosyvoice", "edge-tts")
-                fallback_config = TTSConfig(
-                    engine="edge-tts", speed=self.config.tts.speed,
-                )
-                try:
-                    engine = create_tts_engine(fallback_config)
-                    segments = engine.synthesize(
-                        segments, temp_dir, progress_callback,
-                        process_registry=self._active_processes,
-                    )
-                except Exception as fallback_err:
-                    raise PipelineError(
-                        f'CosyVoice 失败: "{degraded_msg}", '
-                        f'Edge-TTS 也失败: {fallback_err}',
-                        stage="TTS",
-                        suggestion="请检查网络连接，或尝试重新运行",
-                    ) from fallback_err
-            else:
-                raise
+        engine_name: str | None = self.config.tts.engine
+        tried: set[str] = set()
+        errors: list[str] = []
 
-        return segments
+        while engine_name is not None:
+            if engine_name in tried:
+                break
+            tried.add(engine_name)
+
+            try:
+                if engine_name == self.config.tts.engine:
+                    tts_config = self.config.tts
+                else:
+                    tts_config = TTSConfig(
+                        engine=engine_name, speed=self.config.tts.speed,
+                    )
+                engine = create_tts_engine(tts_config)
+                return engine.synthesize(
+                    segments, temp_dir, progress_callback,
+                    process_registry=self._active_processes,
+                )
+            except (PipelineError, MemoryError, RuntimeError, ImportError) as e:
+                fallback = self._DEGRADATION_CHAIN.get(engine_name)
+                degraded_msg = str(e) or type(e).__name__
+                errors.append(f"{engine_name}: {degraded_msg}")
+
+                if fallback is not None:
+                    logger.warning(
+                        'TTS | DEGRADED | %s → %s | msg="%s"',
+                        engine_name, fallback, degraded_msg,
+                    )
+                    self.signals.tts_degraded.emit(engine_name, fallback)
+                    engine_name = fallback
+                else:
+                    break
+
+        raise PipelineError(
+            f"TTS 所有引擎均失败 — {'; '.join(errors)}",
+            stage="TTS",
+            suggestion="请检查网络连接、模型路径，或尝试重新运行",
+        )
 
     def _run_alignment(
         self, segments: list[SubtitleSegment], temp_dir: Path,

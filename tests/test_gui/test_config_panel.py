@@ -26,7 +26,6 @@ class TestConfigPanelLoadConfig:
         panel.load_config()
 
         assert panel._asr_path_input.text() == config.asr.model_path
-        assert panel._speed_slider.value() == int(config.tts.speed * 10)
 
     def test_load_default_when_no_file(self, panel: ConfigPanel, config_path: Path) -> None:
         panel.load_config()
@@ -67,27 +66,6 @@ class TestConfigPanelPresetSwitch:
         assert panel._translation_combo.currentData() == balanced.translation.engine
 
 
-class TestConfigPanelSpeedSlider:
-    def test_default_speed(self, panel: ConfigPanel, config_path: Path) -> None:
-        _fill_all(panel, config_path)
-        assert panel._speed_slider.value() == 10
-        assert panel._speed_label.text() == "1.0x"
-
-    def test_slider_updates_label(self, panel: ConfigPanel, config_path: Path) -> None:
-        _fill_all(panel, config_path)
-
-        panel._speed_slider.setValue(15)
-        assert panel._speed_label.text() == "1.5x"
-
-    def test_slider_min_max(self, panel: ConfigPanel, config_path: Path) -> None:
-        _fill_all(panel, config_path)
-
-        panel._speed_slider.setValue(5)
-        assert panel._speed_label.text() == "0.5x"
-
-        panel._speed_slider.setValue(20)
-        assert panel._speed_label.text() == "2.0x"
-
 
 class TestConfigPanelPersistence:
     def test_change_triggers_save(self, panel: ConfigPanel, config_path: Path) -> None:
@@ -99,26 +77,15 @@ class TestConfigPanelPersistence:
         saved = load_config(config_path)
         assert saved.translation.api_key == "new-api-key"
 
-    def test_speed_persists(self, panel: ConfigPanel, config_path: Path) -> None:
-        _fill_all(panel, config_path)
-
-        panel._speed_slider.setValue(15)
-        panel._do_save()
-
-        saved = load_config(config_path)
-        assert saved.tts.speed == 1.5
-
     def test_reload_restores_state(self, panel: ConfigPanel, config_path: Path) -> None:
         _fill_all(panel, config_path)
         panel._api_key_input.setText("persisted-key")
-        panel._speed_slider.setValue(12)
         panel._do_save()
 
         panel2 = ConfigPanel(config_path)
         panel2.load_config()
 
         assert panel2._api_key_input.text() == "persisted-key"
-        assert panel2._speed_slider.value() == 12
 
 
 class TestConfigPanelApiKeyToggle:

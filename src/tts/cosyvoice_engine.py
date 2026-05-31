@@ -11,6 +11,7 @@ from typing import IO, Callable
 from src.exceptions import PipelineError
 from src.models import ProgressEvent, SubtitleSegment
 from src.tts.base import TTSEngine
+from src.utils.platform_utils import get_process_group_kwargs
 
 logger = logging.getLogger("video_translator")
 
@@ -62,7 +63,7 @@ class CosyVoiceEngine(TTSEngine):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
-            start_new_session=True,
+            **get_process_group_kwargs(),
         )
         if process_registry is not None:
             process_registry.append(process)
@@ -151,7 +152,7 @@ class CosyVoiceEngine(TTSEngine):
         existing = env.get("PYTHONPATH", "")
         if existing:
             pythonpath_parts.append(existing)
-        env["PYTHONPATH"] = ":".join(pythonpath_parts)
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
         env["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
         return env

@@ -72,7 +72,7 @@ class TestPresets:
 
     def test_fast_preset(self) -> None:
         cfg = get_preset("fast")
-        assert cfg.tts.engine == "edge-tts"
+        assert cfg.tts.engine == "chattts"
 
     def test_offline_preset(self) -> None:
         cfg = get_preset("offline")

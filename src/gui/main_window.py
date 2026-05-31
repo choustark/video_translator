@@ -1,19 +1,15 @@
 import logging
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
-    QHBoxLayout,
-    QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSlider,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -23,8 +19,6 @@ from src.config import AppConfig
 from src.gui.config_panel import ConfigPanel
 from src.gui.constants import (
     COLOR_SECONDARY_BG,
-    COLOR_SECONDARY_TEXT,
-    FONT_LABEL,
     PANEL_DEFAULT_WIDTH,
     PANEL_MIN_WIDTH,
     SPACING_CONTENT_MARGIN,
@@ -38,6 +32,7 @@ from src.gui.transcript_panel import TranscriptPanel
 from src.gui.video_drop_area import VideoDropArea
 from src.pipeline import Pipeline
 from src.signals import PipelineSignals
+from src.utils.platform_utils import open_with_default_app
 from src.validators import validate_all
 
 logger = logging.getLogger("video_translator")
@@ -93,25 +88,6 @@ class MainWindow(QMainWindow):
 
         right_layout.addSpacing(SPACING_MD)
 
-        speed_label = QLabel("语速")
-        speed_label.setObjectName("fieldLabel")
-        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(5, 20)
-        self._speed_slider.setValue(10)
-        self._speed_slider.setTickInterval(1)
-        self._speed_value_label = QLabel("1.0x")
-        self._speed_value_label.setStyleSheet(
-            f"color: {COLOR_SECONDARY_TEXT}; font-size: {FONT_LABEL}pt;"
-        )
-        self._speed_value_label.setFixedWidth(40)
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(speed_label)
-        speed_row.addWidget(self._speed_slider)
-        speed_row.addWidget(self._speed_value_label)
-        right_layout.addLayout(speed_row)
-
-        right_layout.addSpacing(SPACING_MD)
-
         self._pipeline_progress = PipelineProgress()
         right_layout.addWidget(self._pipeline_progress)
 
@@ -149,10 +125,6 @@ class MainWindow(QMainWindow):
         self._translate_btn.clicked.connect(self._on_translate_clicked)
         self._open_output_btn.clicked.connect(self._open_output_dir)
 
-        self._speed_slider.valueChanged.connect(self._on_right_speed_changed)
-        self._config_panel._speed_slider.valueChanged.connect(
-            self._on_left_speed_changed
-        )
         self._config_panel.validation_changed.connect(self._on_validation_changed)
         self._signals.pipeline_finished.connect(self._on_pipeline_finished)
         self._signals.stage_failed.connect(self._on_stage_failed)
@@ -255,26 +227,10 @@ class MainWindow(QMainWindow):
             f"以下 {len(errors)} 项检查未通过：\n\n{detail}",
         )
 
-    def _on_right_speed_changed(self, value: int) -> None:
-        self._speed_value_label.setText(f"{value / 10:.1f}x")
-        self._config_panel._speed_slider.blockSignals(True)
-        try:
-            self._config_panel._speed_slider.setValue(value)
-        finally:
-            self._config_panel._speed_slider.blockSignals(False)
-
-    def _on_left_speed_changed(self, value: int) -> None:
-        self._speed_slider.blockSignals(True)
-        try:
-            self._speed_slider.setValue(value)
-        finally:
-            self._speed_slider.blockSignals(False)
-        self._speed_value_label.setText(f"{value / 10:.1f}x")
-
     def _open_output_dir(self) -> None:
         try:
             _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["open", str(_OUTPUT_DIR)], check=False)
+            open_with_default_app(_OUTPUT_DIR)
         except Exception:
             logger.error("无法打开输出目录: %s", _OUTPUT_DIR, exc_info=True)
 
@@ -290,7 +246,7 @@ class MainWindow(QMainWindow):
 
         if not isValid(self):
             return
-        focusable_types = (QComboBox, QLineEdit, QPushButton, QSlider)
+        focusable_types = (QComboBox, QLineEdit, QPushButton)
 
         # 左侧面板：文档顺序（视觉从上到下）→ 类型白名单过滤
         left_all = self._config_panel.findChildren(QWidget)

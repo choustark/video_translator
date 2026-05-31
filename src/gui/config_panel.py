@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSlider,
     QStyle,
     QVBoxLayout,
     QWidget,
@@ -63,7 +62,7 @@ _CUSTOM_KEY = "custom"
 _PRESET_RESOURCE: dict[str, tuple[str, str]] = {
     "high_quality": ("≈7GB", "≈3GB"),
     "balanced": ("≈5.5GB", "≈1.5GB"),
-    "fast": ("≈0.5GB", "≈0.3GB"),
+    "fast": ("≈2.5GB", "≈2.3GB"),
     "offline": ("≈8GB", "≈5GB"),
 }
 
@@ -82,6 +81,7 @@ _ASR_ENGINE_DISPLAY: dict[str, str] = {
 }
 _TTS_ENGINE_DISPLAY: dict[str, str] = {
     "cosyvoice": "CosyVoice",
+    "chattts": "ChatTTS",
     "edge-tts": "Edge-TTS",
 }
 
@@ -267,17 +267,6 @@ class ConfigPanel(QWidget):
         tts_path_btn.clicked.connect(lambda: self._browse_directory(self._tts_path_input))
         tts_form.addRow(self._field_label("模型路径"), tts_path_row)
 
-        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(5, 20)
-        self._speed_slider.setValue(10)
-        self._speed_slider.setTickInterval(1)
-        self._speed_label = QLabel("1.0x")
-        self._speed_label.setFixedWidth(40)
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(self._speed_slider)
-        speed_row.addWidget(self._speed_label)
-        tts_form.addRow(self._field_label("语速"), speed_row)
-
         self._subtitle_style_combo = QComboBox()
         for key, display in _SUBTITLE_STYLE_DISPLAY.items():
             self._subtitle_style_combo.addItem(display, key)
@@ -338,17 +327,12 @@ class ConfigPanel(QWidget):
         self._api_key_input.textChanged.connect(self._on_config_changed)
         self._tts_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._tts_path_input.textChanged.connect(self._on_config_changed)
-        self._speed_slider.valueChanged.connect(self._on_speed_changed)
         self._subtitle_style_combo.currentIndexChanged.connect(self._on_config_changed)
         self._scheme_combo.currentIndexChanged.connect(self._on_scheme_selected)
         self._btn_save_scheme.clicked.connect(self._save_current_scheme)
         self._btn_delete_scheme.clicked.connect(self._delete_selected_scheme)
         self._btn_import_scheme.clicked.connect(self._import_scheme)
         self._btn_export_scheme.clicked.connect(self._export_scheme)
-
-    def _on_speed_changed(self, value: int) -> None:
-        self._speed_label.setText(f"{value / 10:.1f}x")
-        self._on_config_changed()
 
     def _on_preset_changed(self, _index: int) -> None:
         key = self._preset_combo.currentData()
@@ -372,7 +356,6 @@ class ConfigPanel(QWidget):
         self._api_key_input.blockSignals(True)
         self._tts_engine_combo.blockSignals(True)
         self._tts_path_input.blockSignals(True)
-        self._speed_slider.blockSignals(True)
         self._subtitle_style_combo.blockSignals(True)
 
         preset_idx = self._preset_combo.findData(config.preset)
@@ -396,8 +379,6 @@ class ConfigPanel(QWidget):
             self._tts_engine_combo.setCurrentIndex(tts_engine_idx)
 
         self._tts_path_input.setText(config.tts.model_path)
-        self._speed_slider.setValue(int(config.tts.speed * 10))
-        self._speed_label.setText(f"{config.tts.speed:.1f}x")
 
         style_idx = self._subtitle_style_combo.findData(config.subtitle.style)
         if style_idx >= 0:
@@ -410,7 +391,6 @@ class ConfigPanel(QWidget):
         self._api_key_input.blockSignals(False)
         self._tts_engine_combo.blockSignals(False)
         self._tts_path_input.blockSignals(False)
-        self._speed_slider.blockSignals(False)
         self._subtitle_style_combo.blockSignals(False)
 
     def _on_config_changed(self) -> None:
@@ -454,8 +434,6 @@ class ConfigPanel(QWidget):
             return False
         if self._tts_path_input.text() != preset.tts.model_path:
             return False
-        if abs(self._speed_slider.value() / 10 - preset.tts.speed) > 0.01:
-            return False
         if self._subtitle_style_combo.currentData() != preset.subtitle.style:
             return False
         return True
@@ -494,7 +472,7 @@ class ConfigPanel(QWidget):
             str(self._asr_engine_combo.currentData() or "mlx-whisper"),
         )
         tts_engine = cast(
-            Literal["cosyvoice", "edge-tts"],
+            Literal["cosyvoice", "edge-tts", "chattts"],
             str(self._tts_engine_combo.currentData() or "cosyvoice"),
         )
         subtitle_style = str(self._subtitle_style_combo.currentData() or "classic_white")
@@ -516,7 +494,7 @@ class ConfigPanel(QWidget):
                     engine=tts_engine,
                     model_path=self._tts_path_input.text(),
                     voice="default",
-                    speed=self._speed_slider.value() / 10,
+                    speed=1.0,
                     conda_python_path=self._file_cosyvoice_field("conda_python_path"),
                     cosyvoice_source_path=self._file_cosyvoice_field("cosyvoice_source_path"),
                 ),

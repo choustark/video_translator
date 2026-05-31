@@ -4,7 +4,7 @@
   "language": "en"
   "proper_nouns": []
 "translation":
-  "engine": "deepseek"
+  "engine": "glm"
   "model": "glm-4-flash"
   "source_lang": "EN"
   "target_lang": "ZH"

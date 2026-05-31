@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asr.mlx_whisper_engine import (
+from src.asr._helpers import (
     _DEFAULT_PROPER_NOUNS,
-    MLXWhisperEngine,
     _apply_proper_noun_replacements,
     _build_initial_prompt,
     _merge_short_segments,
 )
+from src.asr.mlx_whisper_engine import MLXWhisperEngine
 from src.config import ASRConfig
 from src.exceptions import PipelineError
 from src.models import ProgressEvent, SubtitleSegment
@@ -45,7 +45,7 @@ class TestTranscribe:
         mock_mlx.transcribe.return_value = _mock_transcribe_result()
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -74,7 +74,7 @@ class TestTranscribe:
         }
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -93,7 +93,7 @@ class TestTranscribe:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -123,7 +123,7 @@ class TestTranscribe:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -141,7 +141,7 @@ class TestMemoryCheck:
     def test_raises_when_memory_low(self) -> None:
         engine = MLXWhisperEngine(_make_config())
 
-        with patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil:
+        with patch("src.asr._helpers.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(
                 available=1 * 1024 ** 3,
             )
@@ -157,7 +157,7 @@ class TestMemoryCheck:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -174,7 +174,7 @@ class TestImportError:
         engine = MLXWhisperEngine(_make_config())
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             # sys.modules[name]=None 强制 import 抛 ImportError
             patch.dict(sys.modules, {"mlx_whisper": None}),
@@ -194,7 +194,7 @@ class TestImportError:
         mock_mlx.transcribe.side_effect = RuntimeError("model not found")
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -216,7 +216,7 @@ class TestProgressCallback:
         events: list[ProgressEvent] = []
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -244,7 +244,7 @@ class TestProgressCallback:
         events: list[ProgressEvent] = []
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -266,7 +266,7 @@ class TestProgressCallback:
         mock_mlx.transcribe.return_value = _mock_transcribe_result()
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -287,7 +287,7 @@ class TestGCRelease:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc") as mock_gc,
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
@@ -308,7 +308,7 @@ class TestGCRelease:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {
                 "mlx_whisper": mock_mlx,
@@ -332,7 +332,7 @@ class TestGCRelease:
         mock_mlx.transcribe.return_value = {"text": "", "segments": []}
 
         with (
-            patch("src.asr.mlx_whisper_engine.psutil") as mock_psutil,
+            patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
             patch.dict(sys.modules, {
                 "mlx_whisper": mock_mlx,

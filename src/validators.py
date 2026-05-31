@@ -13,6 +13,7 @@ import psutil
 
 from src.config import DEFAULT_MEMORY_WARNING_GB, AppConfig
 from src.exceptions import ValidationError
+from src.utils.platform_utils import get_ffmpeg_install_hint
 
 logger = logging.getLogger("video_translator")
 
@@ -37,7 +38,7 @@ def validate_ffmpeg() -> None:
         raise ValidationError(
             "未检测到 ffmpeg",
             stage="ffmpeg",
-            suggestion="请安装 ffmpeg: brew install ffmpeg",
+            suggestion=f"请安装 ffmpeg: {get_ffmpeg_install_hint()}",
         )
 
     try:

@@ -55,9 +55,10 @@ class TranslationConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    engine: Literal["cosyvoice", "edge-tts"]
+    engine: Literal["cosyvoice", "edge-tts", "chattts"]
     model_path: str = ""
     voice: str = "default"
+    # 不再暴露给 UI，三层自动化已覆盖（翻译时长约束 + rate 自适应 + rubberband）
     speed: float = Field(1.0, ge=0.5, le=2.0)
     conda_python_path: str = ""
     cosyvoice_source_path: str = ""
@@ -109,7 +110,7 @@ _PRESETS_DATA: dict[str, dict] = {
     "fast": {
         "asr": {"engine": "mlx-whisper", "model_path": "models/asr/whisper-tiny"},
         "translation": {"engine": "deepseek"},
-        "tts": {"engine": "edge-tts"},
+        "tts": {"engine": "chattts"},
     },
     "offline": {
         "asr": {"engine": "mlx-whisper", "model_path": "models/asr/whisper-medium"},

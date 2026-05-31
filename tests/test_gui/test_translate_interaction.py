@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtWidgets import QPushButton, QSlider
+from PySide6.QtWidgets import QPushButton
 
 from src.gui.main_window import MainWindow
 
@@ -68,44 +68,6 @@ class TestTranslateButton:
         main_window._translating = True
         main_window._on_pipeline_finished()
         assert main_window._translate_btn.isEnabled() is True
-
-
-class TestSpeedSlider:
-    def test_speed_slider_exists(self, main_window: MainWindow) -> None:
-        assert isinstance(main_window._speed_slider, QSlider)
-        assert main_window._speed_slider.minimum() == 5
-        assert main_window._speed_slider.maximum() == 20
-        assert main_window._speed_slider.value() == 10
-
-    def test_speed_value_label(self, main_window: MainWindow) -> None:
-        assert main_window._speed_value_label.text() == "1.0x"
-
-    def test_right_slider_syncs_to_left(self, main_window: MainWindow) -> None:
-        main_window._speed_slider.setValue(15)
-        assert main_window._config_panel._speed_slider.value() == 15
-        assert main_window._speed_value_label.text() == "1.5x"
-
-    def test_left_slider_syncs_to_right(self, main_window: MainWindow) -> None:
-        main_window._config_panel._speed_slider.setValue(8)
-        assert main_window._speed_slider.value() == 8
-        assert main_window._speed_value_label.text() == "0.8x"
-
-    def test_bidirectional_no_signal_loop(
-        self, main_window: MainWindow
-    ) -> None:
-        main_window._speed_slider.setValue(12)
-        assert main_window._config_panel._speed_slider.value() == 12
-        main_window._config_panel._speed_slider.setValue(18)
-        assert main_window._speed_slider.value() == 18
-        assert main_window._speed_value_label.text() == "1.8x"
-
-    def test_slider_boundary_min(self, main_window: MainWindow) -> None:
-        main_window._speed_slider.setValue(5)
-        assert main_window._speed_value_label.text() == "0.5x"
-
-    def test_slider_boundary_max(self, main_window: MainWindow) -> None:
-        main_window._speed_slider.setValue(20)
-        assert main_window._speed_value_label.text() == "2.0x"
 
 
 class TestOpenOutputButton:

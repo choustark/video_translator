@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtCore import QSettings, Qt
@@ -143,3 +144,17 @@ class TestMainWindowConfigPanelIntegration:
         from src.config import AppConfig
 
         assert isinstance(config, AppConfig)
+
+
+class TestOpenOutputDir:
+    def test_calls_open_with_default_app(self, main_window: MainWindow) -> None:
+        with patch("src.gui.main_window.open_with_default_app") as mock_open:
+            main_window._open_output_dir()
+            mock_open.assert_called_once()
+
+    def test_handles_exception_gracefully(self, main_window: MainWindow) -> None:
+        with patch(
+            "src.gui.main_window.open_with_default_app",
+            side_effect=OSError("test error"),
+        ):
+            main_window._open_output_dir()  # 不应抛出异常

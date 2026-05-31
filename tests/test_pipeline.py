@@ -22,6 +22,30 @@ def _make_config(tmp_path: Path) -> AppConfig:
     )
 
 
+def _make_mock_popen(
+    stderr_lines: list[bytes] | None = None,
+    returncode: int = 0,
+    side_effect: type[Exception] | None = None,
+) -> MagicMock:
+    """创建模拟的 Popen 对象，用于替代 subprocess.Popen。"""
+    if side_effect is not None:
+        mock_cls = MagicMock(side_effect=side_effect)
+        return mock_cls
+
+    mock_proc = MagicMock()
+    mock_proc.stderr = iter(stderr_lines or [])
+    mock_proc.returncode = returncode
+    mock_proc.wait.return_value = None
+    mock_proc.terminate.return_value = None
+    mock_cls = MagicMock(return_value=mock_proc)
+    return mock_cls
+
+
+def _popen_proc(mock_popen_cls: MagicMock) -> MagicMock:
+    """从 mock Popen 类中获取实际的 mock proc 实例。"""
+    return mock_popen_cls.return_value
+
+
 class TestPipelineInit:
     def test_deepcopies_config(self, tmp_path: Path) -> None:
         original = _make_config(tmp_path)
@@ -115,6 +139,37 @@ class TestStageManagement:
         assert failed == [("TTS", "OOM")]
 
 
+class TestParseFfmpegTime:
+    def test_standard_format(self) -> None:
+        line = "frame=  120 fps= 30 q=-1.0 size=    1024kB time=00:00:04.00 bitrate= 2097.2kbits/s speed=   1x"
+        assert Pipeline._parse_ffmpeg_time(line) == 4.0
+
+    def test_minutes_and_seconds(self) -> None:
+        line = "time=00:01:30.50"
+        assert Pipeline._parse_ffmpeg_time(line) == 90.5
+
+    def test_hours(self) -> None:
+        line = "time=01:23:45.67"
+        assert Pipeline._parse_ffmpeg_time(line) == 3600 + 23 * 60 + 45.67
+
+    def test_zero_time(self) -> None:
+        line = "time=00:00:00.00"
+        assert Pipeline._parse_ffmpeg_time(line) == 0.0
+
+    def test_no_fractional_seconds(self) -> None:
+        line = "time=00:00:05"
+        assert Pipeline._parse_ffmpeg_time(line) == 5.0
+
+    def test_no_match_returns_none(self) -> None:
+        assert Pipeline._parse_ffmpeg_time("some random output") is None
+
+    def test_empty_string_returns_none(self) -> None:
+        assert Pipeline._parse_ffmpeg_time("") is None
+
+    def test_partial_match_not_confused(self) -> None:
+        assert Pipeline._parse_ffmpeg_time("timestamp=12345") is None
+
+
 class TestExtractAudio:
     def test_success(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
@@ -123,48 +178,20 @@ class TestExtractAudio:
         temp_dir = tmp_path / "temp"
         temp_dir.mkdir()
 
-        with patch("src.pipeline.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  120 fps= 30 time=00:00:04.00\n"],
+            returncode=0,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=10.0),
+        ):
             result = pipeline._extract_audio(video, temp_dir)
 
         assert result == temp_dir / "audio.wav"
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
-        assert cmd[0] == "ffmpeg"
-        assert "-vn" in cmd
-        assert "16000" in cmd
-
-    def test_ffmpeg_called_process_error(self, tmp_path: Path) -> None:
-        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
-        video = tmp_path / "input.mp4"
-        video.write_text("fake")
-        temp_dir = tmp_path / "temp"
-        temp_dir.mkdir()
-
-        with patch("src.pipeline.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.CalledProcessError(
-                1, "ffmpeg", stderr=b"Invalid data found"
-            )
-            with pytest.raises(PipelineError) as exc_info:
-                pipeline._extract_audio(video, temp_dir)
-
-        assert exc_info.value.stage == "音频提取"
-        assert "音频提取失败" in str(exc_info.value)
-
-    def test_ffmpeg_timeout(self, tmp_path: Path) -> None:
-        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
-        video = tmp_path / "input.mp4"
-        video.write_text("fake")
-        temp_dir = tmp_path / "temp"
-        temp_dir.mkdir()
-
-        with patch("src.pipeline.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired("ffmpeg", 60)
-            with pytest.raises(PipelineError) as exc_info:
-                pipeline._extract_audio(video, temp_dir)
-
-        assert exc_info.value.stage == "音频提取"
-        assert "超时" in str(exc_info.value)
+        proc = _popen_proc(mock_popen)
+        proc.wait.assert_called()
 
     def test_ffmpeg_not_found(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
@@ -173,13 +200,178 @@ class TestExtractAudio:
         temp_dir = tmp_path / "temp"
         temp_dir.mkdir()
 
-        with patch("src.pipeline.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("ffmpeg not found")
-            with pytest.raises(PipelineError) as exc_info:
-                pipeline._extract_audio(video, temp_dir)
+        mock_popen = _make_mock_popen(side_effect=FileNotFoundError("ffmpeg not found"))
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            pytest.raises(PipelineError) as exc_info,
+        ):
+            pipeline._extract_audio(video, temp_dir)
 
         assert exc_info.value.stage == "音频提取"
         assert "ffmpeg 未找到" in str(exc_info.value)
+
+    def test_ffmpeg_nonzero_exit(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"Invalid data found\n"],
+            returncode=1,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=0.0),
+            pytest.raises(PipelineError) as exc_info,
+        ):
+            pipeline._extract_audio(video, temp_dir)
+
+        assert exc_info.value.stage == "音频提取"
+        assert "音频提取失败" in str(exc_info.value)
+
+    def test_progress_emitted(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+
+        progress_events: list[tuple[str, float]] = []
+        pipeline.signals.stage_progress.connect(
+            lambda name, pct: progress_events.append((name, pct)),
+        )
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[
+                b"frame=  30 fps= 30 time=00:00:01.00\n",
+                b"frame=  60 fps= 30 time=00:00:02.00\n",
+                b"frame=  90 fps= 30 time=00:00:03.00\n",
+            ],
+            returncode=0,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=10.0),
+        ):
+            pipeline._extract_audio(video, temp_dir)
+
+        assert len(progress_events) == 3
+        assert progress_events[0] == ("音频提取", 0.1)
+        assert progress_events[1] == ("音频提取", 0.2)
+        assert progress_events[2] == ("音频提取", 0.3)
+
+    def test_no_progress_when_duration_zero(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+
+        progress_events: list[tuple[str, float]] = []
+        pipeline.signals.stage_progress.connect(
+            lambda name, pct: progress_events.append((name, pct)),
+        )
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=0.0),
+        ):
+            pipeline._extract_audio(video, temp_dir)
+
+        assert len(progress_events) == 0
+
+    def test_abort_during_extraction(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        pipeline._abort_requested.set()
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=10.0),
+            pytest.raises(PipelineError, match="用户中止"),
+        ):
+            pipeline._extract_audio(video, temp_dir)
+
+    def test_timeout_during_extraction(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=10.0),
+            patch("src.pipeline.time.monotonic", side_effect=[0.0, 61.0]),
+            pytest.raises(PipelineError, match="音频提取超时"),
+        ):
+            pipeline._extract_audio(video, temp_dir)
+
+        proc = _popen_proc(mock_popen)
+        proc.terminate.assert_called_once()
+
+    def test_process_registered_in_active_processes(self, tmp_path: Path) -> None:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "input.mp4"
+        video.write_text("fake")
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+        mock_proc = _popen_proc(mock_popen)
+
+        with (
+            patch("src.pipeline.subprocess.Popen", mock_popen),
+            patch.object(pipeline, "_get_video_duration_safe", return_value=10.0),
+        ):
+            # 在执行过程中临时追踪 append/remove 调用
+            append_calls: list[object] = []
+            remove_calls: list[object] = []
+            original_list = pipeline._active_processes
+            pipeline._active_processes = []  # type: ignore[assignment]
+
+            # 手动追踪 append/remove
+            class TrackingList(list):  # type: ignore[type-arg]
+                def append(self, item: object) -> None:
+                    append_calls.append(item)
+                    super().append(item)
+
+                def remove(self, item: object) -> None:
+                    remove_calls.append(item)
+                    super().remove(item)
+
+            pipeline._active_processes = TrackingList()  # type: ignore[assignment]
+
+            pipeline._extract_audio(video, temp_dir)
+
+        assert mock_proc in append_calls
+        assert len(pipeline._active_processes) == 0
 
 
 class TestProcess:
@@ -200,8 +392,13 @@ class TestProcess:
             SubtitleSegment(index=0, start_time=0.0, end_time=1.0, source_text="Hello"),
         ]
 
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
         with (
-            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.pipeline.subprocess.Popen", mock_popen),
             patch("src.asr.create_asr_engine", return_value=mock_engine),
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
@@ -209,7 +406,6 @@ class TestProcess:
             patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
             patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
             mock_provider.translate.side_effect = lambda segs, cb=None: segs
             mock_trans_factory.return_value = mock_provider
@@ -253,8 +449,9 @@ class TestProcess:
             lambda: finished_emitted.append(None)
         )
 
-        with patch("src.pipeline.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("no ffmpeg")
+        mock_popen = _make_mock_popen(side_effect=FileNotFoundError("no ffmpeg"))
+
+        with patch("src.pipeline.subprocess.Popen", mock_popen):
             result = pipeline.process(video, output_dir)
 
         assert result.success is False
@@ -273,11 +470,15 @@ class TestProcess:
             lambda name, err: failed.append((name, err))
         )
 
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
         with (
-            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.pipeline.subprocess.Popen", mock_popen),
             patch.object(pipeline, "_run_asr", side_effect=RuntimeError("boom")),
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             result = pipeline.process(video, output_dir)
 
         assert result.success is False
@@ -304,9 +505,14 @@ class TestProcess:
             captured_temp_dir.append(td)
             return td
 
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
         with (
             caplog.at_level(logging.INFO, logger="video_translator"),
-            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.pipeline.subprocess.Popen", mock_popen),
             patch("src.asr.create_asr_engine") as mock_asr_factory,
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
@@ -315,7 +521,6 @@ class TestProcess:
             patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
             patch.object(pipeline, "_create_temp_dir", tracking_create),
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             mock_asr = MagicMock()
             mock_asr.transcribe.return_value = [
                 SubtitleSegment(index=0, start_time=0.0, end_time=1.0, source_text="Hi"),
@@ -366,12 +571,16 @@ class TestProcess:
             captured_temp_dir.append(td)
             return td
 
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
         with (
-            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.pipeline.subprocess.Popen", mock_popen),
             patch.object(pipeline, "_create_temp_dir", tracking_create),
             patch.object(pipeline, "_run_asr", side_effect=RuntimeError("ASR crash")),
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             result = pipeline.process(video, output_dir)
 
         assert result.success is False
@@ -397,8 +606,13 @@ class TestStart:
             SubtitleSegment(index=0, start_time=0.0, end_time=1.0, source_text="Hello"),
         ]
 
+        mock_popen = _make_mock_popen(
+            stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
+            returncode=0,
+        )
+
         with (
-            patch("src.pipeline.subprocess.run") as mock_run,
+            patch("src.pipeline.subprocess.Popen", mock_popen),
             patch("src.asr.create_asr_engine", return_value=mock_engine),
             patch("src.translation.create_translation_provider") as mock_trans_factory,
             patch("src.tts.create_tts_engine") as mock_tts_factory,
@@ -406,7 +620,6 @@ class TestStart:
             patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
             patch("src.composer.ffmpeg_wrapper.FFmpegWrapper") as mock_ffmpeg_cls,
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             mock_provider = MagicMock()
             mock_provider.translate.side_effect = lambda segs, cb=None: segs
             mock_trans_factory.return_value = mock_provider
@@ -602,7 +815,7 @@ class TestRunTTS:
         assert len(progress_events) == 1
         assert progress_events[0] == ("TTS", 1.0)
 
-    def test_cosyvoice_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+    def test_cosyvoice_degrades_to_chattts(self, tmp_path: Path) -> None:
         config = _make_config(tmp_path)
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
@@ -628,6 +841,7 @@ class TestRunTTS:
                     "CosyVoice 未安装", stage="TTS",
                 )
                 return mock_engine
+            # ChatTTS fallback succeeds
             mock_engine = MagicMock()
             mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
@@ -636,11 +850,13 @@ class TestRunTTS:
             pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 1
-        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+        assert degraded_signals[0] == ("cosyvoice", "chattts")
         assert call_count == 2
 
     def test_edge_tts_failure_does_not_degrade(self, tmp_path: Path) -> None:
-        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        config = _make_config(tmp_path)
+        config.tts.engine = "edge-tts"
+        pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
         segments = [SubtitleSegment(
             index=0, start_time=0.0, end_time=1.0,
@@ -651,7 +867,7 @@ class TestRunTTS:
         mock_engine.synthesize.side_effect = PipelineError("TTS 合成失败", stage="TTS")
 
         with patch("src.tts.create_tts_engine", return_value=mock_engine):
-            with pytest.raises(PipelineError, match="合成失败"):
+            with pytest.raises(PipelineError, match="TTS 所有引擎均失败"):
                 pipeline._run_tts(segments, tmp_path)
 
     def test_tts_preload_timeout_raises_pipeline_error(self, tmp_path: Path) -> None:
@@ -670,8 +886,8 @@ class TestRunTTS:
         ):
             pipeline._run_tts(segments, tmp_path)
 
-    def test_cosyvoice_memory_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
-        """AC1: MemoryError 触发自动降级到 Edge-TTS。"""
+    def test_cosyvoice_memory_error_degrades_to_chattts(self, tmp_path: Path) -> None:
+        """AC1: MemoryError 触发自动降级到 ChatTTS。"""
         config = _make_config(tmp_path)
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
@@ -691,6 +907,7 @@ class TestRunTTS:
                 mock_engine = MagicMock()
                 mock_engine.synthesize.side_effect = MemoryError("OOM")
                 return mock_engine
+            # ChatTTS fallback succeeds
             mock_engine = MagicMock()
             mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
@@ -699,10 +916,10 @@ class TestRunTTS:
             pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 1
-        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+        assert degraded_signals[0] == ("cosyvoice", "chattts")
         assert segments[0].source_text == "Hi"
 
-    def test_cosyvoice_runtime_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+    def test_cosyvoice_runtime_error_degrades_to_chattts(self, tmp_path: Path) -> None:
         """AC1: RuntimeError（模型加载失败）触发自动降级。"""
         config = _make_config(tmp_path)
         config.tts.engine = "cosyvoice"
@@ -723,6 +940,7 @@ class TestRunTTS:
                 mock_engine = MagicMock()
                 mock_engine.synthesize.side_effect = RuntimeError("model load failed")
                 return mock_engine
+            # ChatTTS fallback succeeds
             mock_engine = MagicMock()
             mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
@@ -731,9 +949,9 @@ class TestRunTTS:
             pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 1
-        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+        assert degraded_signals[0] == ("cosyvoice", "chattts")
 
-    def test_cosyvoice_import_error_degrades_to_edge_tts(self, tmp_path: Path) -> None:
+    def test_cosyvoice_import_error_degrades_to_chattts(self, tmp_path: Path) -> None:
         """AC1: ImportError（CosyVoice 未安装）触发自动降级。"""
         config = _make_config(tmp_path)
         config.tts.engine = "cosyvoice"
@@ -754,6 +972,7 @@ class TestRunTTS:
                 mock_engine = MagicMock()
                 mock_engine.synthesize.side_effect = ImportError("No module named 'cosyvoice'")
                 return mock_engine
+            # ChatTTS fallback succeeds
             mock_engine = MagicMock()
             mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
@@ -762,10 +981,10 @@ class TestRunTTS:
             pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 1
-        assert degraded_signals[0] == ("cosyvoice", "edge-tts")
+        assert degraded_signals[0] == ("cosyvoice", "chattts")
 
-    def test_cosyvoice_degrades_edge_tts_also_fails(self, tmp_path: Path) -> None:
-        """AC5: CosyVoice 降级后 Edge-TTS 也失败 → PipelineError(stage=TTS)。"""
+    def test_all_engines_fail_raises_pipeline_error(self, tmp_path: Path) -> None:
+        """AC5: 所有引擎均失败 → PipelineError(stage=TTS)。"""
         config = _make_config(tmp_path)
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
@@ -786,13 +1005,14 @@ class TestRunTTS:
             return mock_engine
 
         with patch("src.tts.create_tts_engine", side_effect=mock_create_tts):
-            with pytest.raises(PipelineError, match="CosyVoice 失败.*Edge-TTS 也失败") as exc_info:
+            with pytest.raises(PipelineError, match="TTS 所有引擎均失败") as exc_info:
                 pipeline._run_tts(segments, tmp_path)
 
         assert exc_info.value.stage == "TTS"
         assert exc_info.value.suggestion is not None
         assert "OOM" in str(exc_info.value)
-        assert len(degraded_signals) == 1
+        # cosyvoice→chattts and chattts→edge-tts
+        assert len(degraded_signals) == 2
 
     def test_cosyvoice_empty_memory_error_degrades(self, tmp_path: Path) -> None:
         """AC1: 空 MemoryError() 降级时日志用类名回退。"""
@@ -815,6 +1035,7 @@ class TestRunTTS:
                 mock_engine = MagicMock()
                 mock_engine.synthesize.side_effect = MemoryError()
                 return mock_engine
+            # ChatTTS fallback succeeds
             mock_engine = MagicMock()
             mock_engine.synthesize.side_effect = lambda segs, td, cb=None, **kw: segs
             return mock_engine
@@ -823,10 +1044,11 @@ class TestRunTTS:
             result = pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 1
+        assert degraded_signals[0] == ("cosyvoice", "chattts")
         assert result[0].source_text == "Hi"
 
-    def test_non_cosyvoice_memory_error_does_not_degrade(self, tmp_path: Path) -> None:
-        """AC5: 非 CosyVoice 引擎失败时不降级，直接抛异常。"""
+    def test_edge_tts_terminal_engine_no_further_degrade(self, tmp_path: Path) -> None:
+        """AC5: Edge-TTS 是终端引擎，失败后不再降级。"""
         config = _make_config(tmp_path)
         config.tts.engine = "edge-tts"
         pipeline = Pipeline(config, PipelineSignals())
@@ -845,7 +1067,7 @@ class TestRunTTS:
         mock_engine.synthesize.side_effect = RuntimeError("connection failed")
 
         with patch("src.tts.create_tts_engine", return_value=mock_engine):
-            with pytest.raises(RuntimeError, match="connection failed"):
+            with pytest.raises(PipelineError, match="TTS 所有引擎均失败"):
                 pipeline._run_tts(segments, tmp_path)
 
         assert len(degraded_signals) == 0

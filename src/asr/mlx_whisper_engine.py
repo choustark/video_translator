@@ -6,9 +6,9 @@ import sys
 from typing import Callable
 
 from src.asr._helpers import (
-    _DEFAULT_PROPER_NOUNS,
     _apply_proper_noun_replacements,
     _build_initial_prompt,
+    _build_proper_nouns_list,
     _check_memory,
     _merge_short_segments,
 )
@@ -38,9 +38,10 @@ class MLXWhisperEngine(ASREngine):
                 suggestion="请运行 uv add mlx-whisper",
             ) from e
 
-        all_nouns = _DEFAULT_PROPER_NOUNS + [
-            n for n in self.config.proper_nouns if n not in _DEFAULT_PROPER_NOUNS
-        ]
+        all_nouns = _build_proper_nouns_list(
+            user_nouns=self.config.proper_nouns,
+            use_default=self.config.use_default_proper_nouns,
+        )
         initial_prompt = _build_initial_prompt(all_nouns)
 
         logger.info("ASR | 开始 | audio=%s, model=%s", audio_path, self.config.model_path)

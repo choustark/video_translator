@@ -11,10 +11,55 @@ from src.exceptions import PipelineError
 from src.models import SubtitleSegment
 
 _DEFAULT_PROPER_NOUNS: list[str] = [
-    "Claude Code", "GPT-4", "PySide6", "ffmpeg", "OpenAI",
-    "DeepSeek", "Homebrew", "Apple Silicon", "Metal", "MPS",
-    "MLX", "Whisper", "CosyVoice", "macOS",
+    "Claude Code",
+    "GPT-4",
+    "PySide6",
+    "ffmpeg",
+    "OpenAI",
+    "DeepSeek",
+    "Homebrew",
+    "Apple Silicon",
+    "Metal",
+    "MPS",
+    "MLX",
+    "Whisper",
+    "CosyVoice",
+    "macOS",
 ]
+
+
+def _build_proper_nouns_list(
+    user_nouns: list[str],
+    use_default: bool = True,
+) -> list[str]:
+    """根据用户配置构建最终的专有名词列表。
+
+    Args:
+        user_nouns: 用户在配置中指定的专有名词列表。
+        use_default: 是否包含默认技术词汇列表。
+
+    Returns:
+        合并后的专有名词列表，去重，保持用户词汇优先顺序。
+    """
+    result: list[str] = []
+    seen: set[str] = set()
+
+    for noun in user_nouns:
+        key = noun.strip().casefold()
+        if not key or key in seen:
+            continue
+        result.append(noun)
+        seen.add(key)
+
+    if use_default:
+        for noun in _DEFAULT_PROPER_NOUNS:
+            key = noun.strip().casefold()
+            if key in seen:
+                continue
+            result.append(noun)
+            seen.add(key)
+
+    return result
 
 
 def _build_initial_prompt(nouns: list[str]) -> str:
@@ -54,7 +99,7 @@ def _apply_proper_noun_replacements(
             lower_text = text.lower()
             pos = lower_text.find(lower_noun)
             if pos >= 0:
-                text = text[:pos] + noun + text[pos + len(lower_noun):]
+                text = text[:pos] + noun + text[pos + len(lower_noun) :]
                 continue
 
             noun_words = noun.split()
@@ -116,7 +161,7 @@ def _merge_short_segments(
         curr = segments[i]
         duration = curr.end_time - curr.start_time
         gap = curr.start_time - prev.end_time
-        is_last = (i == len(segments) - 1)
+        is_last = i == len(segments) - 1
         prev_short = (prev.end_time - prev.start_time) < _MIN_SEGMENT_DURATION
 
         should_merge = False
@@ -141,11 +186,10 @@ def _merge_short_segments(
 
 def _check_memory(requirement_gb: float = 6.0) -> None:
     available = psutil.virtual_memory().available
-    available_gb = available / (1024 ** 3)
+    available_gb = available / (1024**3)
     if available_gb < requirement_gb:
         raise PipelineError(
-            f"可用内存不足: {available_gb:.1f}GB，"
-            f"ASR 至少需要 {requirement_gb:.0f}GB",
+            f"可用内存不足: {available_gb:.1f}GB，ASR 至少需要 {requirement_gb:.0f}GB",
             stage="ASR",
             suggestion="请关闭其他应用释放内存",
         )

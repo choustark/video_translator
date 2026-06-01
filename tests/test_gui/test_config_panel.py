@@ -66,7 +66,6 @@ class TestConfigPanelPresetSwitch:
         assert panel._translation_combo.currentData() == balanced.translation.engine
 
 
-
 class TestConfigPanelPersistence:
     def test_change_triggers_save(self, panel: ConfigPanel, config_path: Path) -> None:
         _fill_all(panel, config_path)
@@ -117,3 +116,29 @@ class TestConfigPanelGetConfig:
         config1 = panel.get_config()
         config2 = panel.get_config()
         assert config1 is not config2
+
+    def test_proper_nouns_support_chinese_punctuation_and_newlines(
+        self, panel: ConfigPanel, config_path: Path
+    ) -> None:
+        _fill_all(panel, config_path)
+
+        panel._proper_nouns_input.setPlainText("OpenAI，旧金山\nSam Altman、PySide6;ffmpeg")
+
+        config = panel.get_config()
+        assert config.asr.proper_nouns == [
+            "OpenAI",
+            "旧金山",
+            "Sam Altman",
+            "PySide6",
+            "ffmpeg",
+        ]
+
+    def test_use_default_proper_nouns_checkbox_is_collected(
+        self, panel: ConfigPanel, config_path: Path
+    ) -> None:
+        _fill_all(panel, config_path)
+
+        panel._use_default_nouns_cb.setChecked(False)
+
+        config = panel.get_config()
+        assert config.asr.use_default_proper_nouns is False

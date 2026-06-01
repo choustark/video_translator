@@ -9,6 +9,7 @@ from src.asr._helpers import (
     _DEFAULT_PROPER_NOUNS,
     _apply_proper_noun_replacements,
     _build_initial_prompt,
+    _build_proper_nouns_list,
     _merge_short_segments,
 )
 from src.asr.mlx_whisper_engine import MLXWhisperEngine
@@ -38,6 +39,23 @@ def _mock_mlx_whisper() -> MagicMock:
     return MagicMock()
 
 
+class TestProperNounsList:
+    def test_deduplicates_user_nouns_case_insensitively(self) -> None:
+        nouns = _build_proper_nouns_list(
+            ["OpenAI", "openai", "MyCustomTool", "MyCustomTool"],
+            use_default=True,
+        )
+
+        assert nouns.count("OpenAI") == 1
+        assert nouns.count("MyCustomTool") == 1
+
+    def test_can_disable_default_proper_nouns(self) -> None:
+        nouns = _build_proper_nouns_list(["MyCustomTool"], use_default=False)
+
+        assert nouns == ["MyCustomTool"]
+        assert "OpenAI" not in nouns
+
+
 class TestTranscribe:
     def test_returns_subtitle_segments(self) -> None:
         engine = MLXWhisperEngine(_make_config())
@@ -50,7 +68,7 @@ class TestTranscribe:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASR_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASR_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             segments = engine.transcribe("/tmp/audio.wav")
 
@@ -79,7 +97,7 @@ class TestTranscribe:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASR_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASR_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             segments = engine.transcribe("/tmp/audio.wav")
 
@@ -98,7 +116,7 @@ class TestTranscribe:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASR_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASR_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -128,7 +146,7 @@ class TestTranscribe:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASR_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASR_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -143,7 +161,7 @@ class TestMemoryCheck:
 
         with patch("src.asr._helpers.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=1 * 1024 ** 3,
+                available=1 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -162,7 +180,7 @@ class TestMemoryCheck:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             segments = engine.transcribe("/tmp/audio.wav")
 
@@ -180,7 +198,7 @@ class TestImportError:
             patch.dict(sys.modules, {"mlx_whisper": None}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -199,7 +217,7 @@ class TestImportError:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -221,7 +239,7 @@ class TestProgressCallback:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe(
                 "/tmp/audio.wav",
@@ -237,9 +255,11 @@ class TestProgressCallback:
         engine = MLXWhisperEngine(_make_config())
         mock_mlx = _mock_mlx_whisper()
         mock_mlx.transcribe.return_value = {
-            "text": "", "language": "en",
-            "segments": [{"start": float(i), "end": float(i + 1), "text": f"seg {i}"}
-                         for i in range(15)],
+            "text": "",
+            "language": "en",
+            "segments": [
+                {"start": float(i), "end": float(i + 1), "text": f"seg {i}"} for i in range(15)
+            ],
         }
         events: list[ProgressEvent] = []
 
@@ -249,7 +269,7 @@ class TestProgressCallback:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe(
                 "/tmp/audio.wav",
@@ -271,10 +291,11 @@ class TestProgressCallback:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             segments = engine.transcribe(
-                "/tmp/audio.wav", progress_callback=None,
+                "/tmp/audio.wav",
+                progress_callback=None,
             )
 
         assert len(segments) == 2
@@ -292,7 +313,7 @@ class TestGCRelease:
             patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -310,13 +331,16 @@ class TestGCRelease:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
-            patch.dict(sys.modules, {
-                "mlx_whisper": mock_mlx,
-                "mlx.core": mock_mx,
-            }),
+            patch.dict(
+                sys.modules,
+                {
+                    "mlx_whisper": mock_mlx,
+                    "mlx.core": mock_mx,
+                },
+            ),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -334,13 +358,16 @@ class TestGCRelease:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.mlx_whisper_engine.gc"),
-            patch.dict(sys.modules, {
-                "mlx_whisper": mock_mlx,
-                "mlx.core": mock_mx,
-            }),
+            patch.dict(
+                sys.modules,
+                {
+                    "mlx_whisper": mock_mlx,
+                    "mlx.core": mock_mx,
+                },
+            ),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             segments = engine.transcribe("/tmp/audio.wav")
 
@@ -418,7 +445,8 @@ class TestProperNounReplacement:
 
 class TestMergeShortSegments:
     def _make_timed_segments(
-        self, specs: list[tuple[float, float, str]],
+        self,
+        specs: list[tuple[float, float, str]],
     ) -> list[SubtitleSegment]:
         return [
             SubtitleSegment(index=i, start_time=start, end_time=end, source_text=text)
@@ -426,50 +454,60 @@ class TestMergeShortSegments:
         ]
 
     def test_merges_short_segment_into_previous(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 3.0, "Hello world."),
-            (3.0, 3.3, "代码。"),
-            (3.3, 6.0, "Next sentence."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 3.0, "Hello world."),
+                (3.0, 3.3, "代码。"),
+                (3.3, 6.0, "Next sentence."),
+            ]
+        )
         result = _merge_short_segments(segs)
         assert len(result) == 2
         assert "代码。" in result[0].source_text
         assert result[0].end_time == 3.3
 
     def test_merges_consecutive_short_segments(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 3.0, "Hello."),
-            (3.0, 3.2, "A."),
-            (3.2, 3.4, "B."),
-            (3.4, 6.0, "Done."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 3.0, "Hello."),
+                (3.0, 3.2, "A."),
+                (3.2, 3.4, "B."),
+                (3.4, 6.0, "Done."),
+            ]
+        )
         result = _merge_short_segments(segs)
         assert len(result) == 2
         assert "A." in result[0].source_text
         assert "B." in result[0].source_text
 
     def test_preserves_normal_segments(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 2.5, "Hello world."),
-            (2.5, 5.0, "This is a test."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 2.5, "Hello world."),
+                (2.5, 5.0, "This is a test."),
+            ]
+        )
         result = _merge_short_segments(segs)
         assert len(result) == 2
 
     def test_last_short_segment_preserved(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 3.0, "Main text."),
-            (3.0, 3.3, "End."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 3.0, "Main text."),
+                (3.0, 3.3, "End."),
+            ]
+        )
         result = _merge_short_segments(segs)
         assert len(result) == 2
         assert result[1].source_text == "End."
 
     def test_last_segment_above_threshold_kept(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 3.0, "Main text."),
-            (3.0, 4.5, "Last one."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 3.0, "Main text."),
+                (3.0, 4.5, "Last one."),
+            ]
+        )
         result = _merge_short_segments(segs)
         assert len(result) == 2
 
@@ -482,13 +520,15 @@ class TestMergeShortSegments:
         assert len(result) == 1
 
     def test_reindexes_merged_output(self) -> None:
-        segs = self._make_timed_segments([
-            (0.0, 3.0, "A."),
-            (3.0, 3.3, "b."),
-            (3.3, 6.0, "C."),
-            (6.0, 6.2, "d."),
-            (6.2, 9.0, "E."),
-        ])
+        segs = self._make_timed_segments(
+            [
+                (0.0, 3.0, "A."),
+                (3.0, 3.3, "b."),
+                (3.3, 6.0, "C."),
+                (6.0, 6.2, "d."),
+                (6.2, 9.0, "E."),
+            ]
+        )
         result = _merge_short_segments(segs)
         for idx, seg in enumerate(result):
             assert seg.index == idx

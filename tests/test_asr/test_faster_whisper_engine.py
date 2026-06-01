@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import gc
 import sys
 from collections import namedtuple
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asr._helpers import _DEFAULT_PROPER_NOUNS
+from src.asr._helpers import _build_initial_prompt
 from src.asr.faster_whisper_engine import FasterWhisperEngine
 from src.config import ASRConfig
 from src.exceptions import PipelineError
-from src.models import ProgressEvent, SubtitleSegment
+from src.models import ProgressEvent
 
 _ASRL_MEMORY_REQUIREMENT_GB = 6.0
 
@@ -41,6 +40,10 @@ def _mock_model(segments: list[_Segment] | None = None, duration: float = 5.0) -
     return mock
 
 
+def _mock_faster_whisper_module(model: MagicMock) -> MagicMock:
+    return MagicMock(WhisperModel=MagicMock(return_value=model))
+
+
 class TestTranscribe:
     def test_returns_subtitle_segments(self) -> None:
         engine = FasterWhisperEngine(_make_config())
@@ -49,10 +52,10 @@ class TestTranscribe:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             segments = engine.transcribe("/tmp/audio.wav")
 
@@ -75,10 +78,10 @@ class TestTranscribe:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             result = engine.transcribe("/tmp/audio.wav")
 
@@ -98,7 +101,7 @@ class TestTranscribe:
             patch.dict(sys.modules, {"faster_whisper": mock_fw}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -116,10 +119,10 @@ class TestTranscribe:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             engine.transcribe("/tmp/audio.wav")
 
@@ -135,16 +138,35 @@ class TestTranscribe:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024 ** 3 + 1,
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
             )
             engine.transcribe("/tmp/audio.wav")
 
         call_kwargs = model.transcribe.call_args
         prompt = call_kwargs.kwargs.get("initial_prompt", call_kwargs[1].get("initial_prompt", ""))
         assert "MyCustomTool" in prompt
+
+    def test_excludes_default_proper_nouns_when_disabled(self) -> None:
+        config = _make_config(proper_nouns=["MyCustomTool"], use_default_proper_nouns=False)
+        engine = FasterWhisperEngine(config)
+        model = _mock_model(segments=[])
+
+        with (
+            patch("src.asr._helpers.psutil") as mock_psutil,
+            patch("src.asr.faster_whisper_engine.gc"),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
+            )
+            engine.transcribe("/tmp/audio.wav")
+
+        call_kwargs = model.transcribe.call_args
+        prompt = call_kwargs.kwargs.get("initial_prompt", call_kwargs[1].get("initial_prompt", ""))
+        assert prompt == _build_initial_prompt(["MyCustomTool"])
 
 
 class TestMemoryCheck:
@@ -153,7 +175,7 @@ class TestMemoryCheck:
 
         with patch("src.asr._helpers.psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=1 * 1024 ** 3,
+                available=1 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -168,10 +190,10 @@ class TestMemoryCheck:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             result = engine.transcribe("/tmp/audio.wav")
 
@@ -188,7 +210,7 @@ class TestImportError:
             patch.dict(sys.modules, {"faster_whisper": None}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -204,10 +226,10 @@ class TestImportError:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             with pytest.raises(PipelineError) as exc_info:
                 engine.transcribe("/tmp/audio.wav")
@@ -225,10 +247,13 @@ class TestProgressCallback:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(
+                sys.modules,
+                {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))},
+            ),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe(
                 "/tmp/audio.wav",
@@ -242,18 +267,20 @@ class TestProgressCallback:
 
     def test_progress_increases_monotonically(self) -> None:
         engine = FasterWhisperEngine(_make_config())
-        segments = [_Segment(id=i, seek=0, start=float(i), end=float(i + 1), text=f"seg {i}")
-                    for i in range(5)]
+        segments = [
+            _Segment(id=i, seek=0, start=float(i), end=float(i + 1), text=f"seg {i}")
+            for i in range(5)
+        ]
         model = _mock_model(segments=segments, duration=5.0)
         events: list[ProgressEvent] = []
 
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe(
                 "/tmp/audio.wav",
@@ -270,10 +297,10 @@ class TestProgressCallback:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             result = engine.transcribe("/tmp/audio.wav", progress_callback=None)
 
@@ -288,10 +315,10 @@ class TestGCRelease:
         with (
             patch("src.asr._helpers.psutil") as mock_psutil,
             patch("src.asr.faster_whisper_engine.gc") as mock_gc,
-            patch.dict(sys.modules, {"faster_whisper": MagicMock(WhisperModel=MagicMock(return_value=model))}),
+            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
         ):
             mock_psutil.virtual_memory.return_value = MagicMock(
-                available=10 * 1024 ** 3,
+                available=10 * 1024**3,
             )
             engine.transcribe("/tmp/audio.wav")
 

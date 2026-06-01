@@ -5,6 +5,7 @@ from typing import Literal, cast
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStyle,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -91,7 +93,7 @@ _SUBTITLE_STYLE_DISPLAY: dict[str, str] = {
     "white_clean": "白字无边",
 }
 
-_SCHEME_NAME_RE = re.compile(r'^[\w一-鿿-]+$')
+_SCHEME_NAME_RE = re.compile(r"^[\w一-鿿-]+$")
 _SCHEMES_DIR = Path.home() / ".video_translator" / "schemes"
 
 
@@ -136,8 +138,10 @@ class ConfigPanel(QWidget):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
-            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
-            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
         )
         layout.setSpacing(0)
 
@@ -158,9 +162,7 @@ class ConfigPanel(QWidget):
         self._preset_info_label.setFixedSize(16, 16)
         self._preset_info_label.setToolTip(self._build_preset_tooltip("high_quality"))
         style = QApplication.style()
-        pixmap = style.standardIcon(
-            QStyle.StandardPixmap.SP_MessageBoxInformation
-        ).pixmap(16, 16)
+        pixmap = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
         self._preset_info_label.setPixmap(pixmap)
         preset_row.addWidget(self._preset_info_label)
         preset_form.addRow(self._field_label("预设方案"), preset_row)
@@ -179,8 +181,12 @@ class ConfigPanel(QWidget):
         self._btn_delete_scheme = QPushButton("删除")
         self._btn_import_scheme = QPushButton("导入")
         self._btn_export_scheme = QPushButton("导出")
-        for btn in (self._btn_save_scheme, self._btn_delete_scheme,
-                    self._btn_import_scheme, self._btn_export_scheme):
+        for btn in (
+            self._btn_save_scheme,
+            self._btn_delete_scheme,
+            self._btn_import_scheme,
+            self._btn_export_scheme,
+        ):
             btn.setObjectName("inlineButton")
             btn_row.addWidget(btn)
         scheme_form.addRow("", btn_row)
@@ -211,6 +217,22 @@ class ConfigPanel(QWidget):
         asr_path_row.addWidget(self._asr_status_icon)
         asr_path_btn.clicked.connect(lambda: self._browse_directory(self._asr_path_input))
         asr_form.addRow(self._field_label("模型路径"), asr_path_row)
+
+        self._use_default_nouns_cb = QCheckBox("使用默认技术词汇")
+        self._use_default_nouns_cb.setChecked(True)
+        self._use_default_nouns_cb.setToolTip(
+            "默认词汇：Claude Code、GPT-4、PySide6、ffmpeg、OpenAI 等\n"
+            "取消勾选后仅使用下方自定义词汇"
+        )
+        asr_form.addRow("", self._use_default_nouns_cb)
+
+        self._proper_nouns_input = QTextEdit()
+        self._proper_nouns_input.setPlaceholderText(
+            "输入专有名词，逗号或换行分隔...\n例如：人名、地名、专业术语"
+        )
+        self._proper_nouns_input.setMaximumHeight(60)
+        asr_form.addRow(self._field_label("专有名词"), self._proper_nouns_input)
+
         layout.addLayout(asr_form)
 
         layout.addSpacing(SPACING_SECTION_TITLE_TOP)
@@ -302,13 +324,9 @@ class ConfigPanel(QWidget):
         """设置校验图标状态：通过显示绿色勾，失败显示红色叉 + tooltip。"""
         style = QApplication.style()
         if passed:
-            pixmap = style.standardIcon(
-                QStyle.StandardPixmap.SP_DialogApplyButton
-            ).pixmap(16, 16)
+            pixmap = style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton).pixmap(16, 16)
         else:
-            pixmap = style.standardIcon(
-                QStyle.StandardPixmap.SP_DialogCancelButton
-            ).pixmap(16, 16)
+            pixmap = style.standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton).pixmap(16, 16)
         icon.setPixmap(pixmap)
         icon.setToolTip(tooltip if not passed else "")
 
@@ -323,6 +341,8 @@ class ConfigPanel(QWidget):
         self._btn_restore_preset.clicked.connect(self._restore_preset)
         self._asr_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._asr_path_input.textChanged.connect(self._on_config_changed)
+        self._use_default_nouns_cb.stateChanged.connect(self._on_config_changed)
+        self._proper_nouns_input.textChanged.connect(self._on_config_changed)
         self._translation_combo.currentIndexChanged.connect(self._on_config_changed)
         self._api_key_input.textChanged.connect(self._on_config_changed)
         self._tts_engine_combo.currentIndexChanged.connect(self._on_config_changed)
@@ -352,6 +372,8 @@ class ConfigPanel(QWidget):
         self._preset_combo.blockSignals(True)
         self._asr_engine_combo.blockSignals(True)
         self._asr_path_input.blockSignals(True)
+        self._use_default_nouns_cb.blockSignals(True)
+        self._proper_nouns_input.blockSignals(True)
         self._translation_combo.blockSignals(True)
         self._api_key_input.blockSignals(True)
         self._tts_engine_combo.blockSignals(True)
@@ -367,6 +389,8 @@ class ConfigPanel(QWidget):
             self._asr_engine_combo.setCurrentIndex(asr_engine_idx)
 
         self._asr_path_input.setText(config.asr.model_path)
+        self._use_default_nouns_cb.setChecked(config.asr.use_default_proper_nouns)
+        self._proper_nouns_input.setPlainText(", ".join(config.asr.proper_nouns))
 
         trans_idx = self._translation_combo.findData(config.translation.engine)
         if trans_idx >= 0:
@@ -387,6 +411,8 @@ class ConfigPanel(QWidget):
         self._preset_combo.blockSignals(False)
         self._asr_engine_combo.blockSignals(False)
         self._asr_path_input.blockSignals(False)
+        self._use_default_nouns_cb.blockSignals(False)
+        self._proper_nouns_input.blockSignals(False)
         self._translation_combo.blockSignals(False)
         self._api_key_input.blockSignals(False)
         self._tts_engine_combo.blockSignals(False)
@@ -476,6 +502,13 @@ class ConfigPanel(QWidget):
             str(self._tts_engine_combo.currentData() or "cosyvoice"),
         )
         subtitle_style = str(self._subtitle_style_combo.currentData() or "classic_white")
+
+        # 解析专有名词：支持中英文标点和换行分隔，去空格，过滤空字符串
+        proper_nouns_text = self._proper_nouns_input.toPlainText()
+        proper_nouns = [
+            noun.strip() for noun in re.split(r"[,，、;；\r\n]+", proper_nouns_text) if noun.strip()
+        ]
+
         try:
             return AppConfig(
                 preset=preset_key,
@@ -483,6 +516,8 @@ class ConfigPanel(QWidget):
                     engine=asr_engine,
                     model_path=self._asr_path_input.text(),
                     language="en",
+                    proper_nouns=proper_nouns,
+                    use_default_proper_nouns=self._use_default_nouns_cb.isChecked(),
                 ),
                 translation=TranslationConfig(
                     engine=trans_key,
@@ -665,14 +700,16 @@ class ConfigPanel(QWidget):
         name = name.strip()
         if not name or not _SCHEME_NAME_RE.match(name) or len(name) > 50:
             QMessageBox.warning(
-                self, "名称无效",
+                self,
+                "名称无效",
                 "方案名仅支持字母、数字、中文、下划线和横线，最长 50 字符。",
             )
             return
         existing = self._scheme_mgr.list_schemes()
         if name in existing:
             reply = QMessageBox.question(
-                self, "覆盖方案",
+                self,
+                "覆盖方案",
                 f"方案 '{name}' 已存在，是否覆盖？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -690,7 +727,8 @@ class ConfigPanel(QWidget):
         if not name:
             return
         reply = QMessageBox.question(
-            self, "删除方案",
+            self,
+            "删除方案",
             f"确定要删除方案 '{name}' 吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -704,7 +742,10 @@ class ConfigPanel(QWidget):
 
     def _import_scheme(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "导入方案", str(Path.home()), "YAML 文件 (*.yaml *.yml)",
+            self,
+            "导入方案",
+            str(Path.home()),
+            "YAML 文件 (*.yaml *.yml)",
         )
         if not path:
             return
@@ -712,7 +753,8 @@ class ConfigPanel(QWidget):
         name = source.stem.strip()
         if not name or not _SCHEME_NAME_RE.match(name) or len(name) > 50:
             QMessageBox.warning(
-                self, "名称无效",
+                self,
+                "名称无效",
                 f"文件名 '{source.stem}' 不符合方案命名规则。\n"
                 "方案名仅支持字母、数字、中文、下划线和横线，最长 50 字符。",
             )
@@ -720,7 +762,8 @@ class ConfigPanel(QWidget):
         existing = self._scheme_mgr.list_schemes()
         if name in existing:
             reply = QMessageBox.question(
-                self, "覆盖方案",
+                self,
+                "覆盖方案",
                 f"方案 '{name}' 已存在，是否覆盖？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -734,7 +777,8 @@ class ConfigPanel(QWidget):
                 self._scheme_combo.setCurrentIndex(idx)
         except ConfigError as e:
             QMessageBox.warning(
-                self, "导入失败",
+                self,
+                "导入失败",
                 f"文件: {source.name}\n原因: {e}\n建议: {e.suggestion}",
             )
 
@@ -744,7 +788,10 @@ class ConfigPanel(QWidget):
             QMessageBox.information(self, "导出方案", "请先选择一个已保存的方案。")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出方案", f"{name}.yaml", "YAML 文件 (*.yaml)",
+            self,
+            "导出方案",
+            f"{name}.yaml",
+            "YAML 文件 (*.yaml)",
         )
         if not path:
             return

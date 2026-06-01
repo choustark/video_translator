@@ -1,7 +1,7 @@
 # Deferred Work (v1 完成后清理)
 
-> 最后更新: 2026-05-23 (D54 节奏调研 + abort + DeepSeekProvider)
-> 分类标准：v1.1 必做 / v1.1 可选 / v2.0+ / 已过期可丢弃
+> 最后更新: 2026-05-30 (v1.1 retro + 语速滑块评估 + 复制功能需求)
+> 分类标准：v1.2 必做 / v1.2 可选 / v2.0+ / 已过期可丢弃
 
 ---
 
@@ -35,7 +35,6 @@
 
 | # | 债务 | 来源 | 影响 |
 |---|------|------|------|
-| D2 | 音频提取阶段无进度反馈 — subprocess.run 阻塞 60s 期间 UI 黑箱 | 4-1 review | 用户体验差 |
 | D4 | AC8 措辞偏差 — spec 说抛异常，实现用 Result | 4-1 review | 文档不一致 |
 | D5 | subprocess stderr 积累风险 — capture_output 对大视频可能内存占用大 | 4-1 review | v1 限 10 分钟可接受 |
 | D22 | 进度回调为转录完成后模拟非实时 | 4-2 review | 进度条跳跃 |
@@ -57,9 +56,202 @@
 | D29 | 零时长视频（duration=0.0）会通过校验 | 3-1 review | 损坏视频未拦截 |
 | D27 | validate_ffmpeg 应使用解析后的 ffmpeg_path | 3-1 review | 功能无影响 |
 
+## v1.2 必做
+
+> 代码评审日期: 2026-05-30
+> 评审结论：6 项全部可行，D20→D57 为依赖链，其余独立。
+> 建议实现顺序：D55 → D2 → D20 → D57 → D58 → D56
+
+---
+
+### D55 — 删除语速滑块（FR9 废弃）
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | Winston 架构评估 (2026-05-30) |
+| 复杂度 | 低（删除为主） |
+| 依赖 | 无 |
+
+**评审结论：可以删除。** Edge-TTS 的 `_compute_rate()` (`edge_tts_engine.py:91-101`) 会根据目标时长为每句话动态计算最优 rate，用户手调的 `speed` 作为 `base_rate_str` 叠加后会和自动计算互相干扰，实际效果微乎其微。三层自动化（翻译时长约束 + rate 自适应 + rubberband）已覆盖。
+
+**代码影响清单：**
+
+| 文件 | 行号 | 改动 |
+|------|------|------|
+| `gui/main_window.py` | 96-111 | 删除 speed_label、speed_slider、speed_value_label、speed_row |
+| `gui/main_window.py` | 152-154 | 删除两处 speed slider 信号连接 |
+| `gui/main_window.py` | 258-272 | 删除 `_on_right_speed_changed`、`_on_left_speed_changed` |
+| `gui/config_panel.py` | 270-279 | 删除 speed_slider、speed_label、speed_row |
+| `gui/config_panel.py` | 341 | 删除 `_on_speed_changed` 信号连接 |
+| `gui/config_panel.py` | 349-351 | 删除 `_on_speed_changed` 方法 |
+| `gui/config_panel.py` | 375,399-400,413 | `_fill_from_config` 中移除 speed 相关 blockSignals + setValue |
+| `gui/config_panel.py` | 457 | `_matches_preset` 移除 speed 比对 |
+| `gui/config_panel.py` | 519 | `_collect_config` 中 speed 改为硬编码 `1.0` |
+| `gui/main_window.py` | 289 | `_setup_tab_order` 中 QSlider 类型白名单——如无其他 slider 可移除 |
+| `config.py` | 61 | `TTSConfig.speed` 字段保留默认 1.0，注释注明"不再暴露给 UI" |
+
+**同步更新：** PRD FR9 标记废弃；UX 规格移除语速控件描述。
+
+---
+
+### D2 — 音频提取阶段实时进度反馈
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 4-1 review |
+| 复杂度 | 低（单方法改造） |
+| 依赖 | 无 |
+
+**评审结论：改动集中在 `pipeline.py:_extract_audio` 一个方法。** 将 `subprocess.run(capture_output=True)` 改为 `subprocess.Popen` + 实时解析 ffmpeg stderr 中的 `time=HH:MM:SS.ms` 行，通过 `progress_callback` 推送到 UI。`video_drop_area.py` 已有 `get_duration()` 获取视频时长作为进度分母。
+
+**代码影响清单：**
+
+| 文件 | 行号 | 改动 |
+|------|------|------|
+| `pipeline.py` | 215-218 | `subprocess.run` → `Popen` + stderr 逐行解析 + `_check_abort()` 集成 |
+| `pipeline.py` | 201 | `_extract_audio` 签名添加 `progress_callback` 参数 |
+
+**实现要点：**
+- 解析 ffmpeg stderr 中的 `time=` 行，提取当前处理时间戳
+- 需要视频总时长（`FFmpegWrapper.get_video_duration()` 或从 `video_drop_area` 传入）
+- 进度回调中调用 `_check_abort()` 支持用户中止
+- `Popen` 进程注册到 `_active_processes` 列表以支持 abort kill
+
+---
+
+### D20 — FasterWhisperEngine 实现
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 用户需求 (2026-05-30) |
+| 复杂度 | 中 |
+| 依赖 | 无（但 D57 依赖它） |
+| 前置 | D57（Windows 跨平台）**依赖本项完成** |
+
+**评审结论：底层基础已就绪，只需实现 `transcribe()`。** 工厂 (`asr/__init__.py:22-24`)、config Literal (`config.py:43`)、GUI 下拉框 (`config_panel.py:79-82`)、pyproject.toml docker 组 (`pyproject.toml:26`) 均已注册。核心工作：加载 CTranslate2 模型 → 调用 `model.transcribe()` → 转换为 `SubtitleSegment` 列表，参考 `MLXWhisperEngine` 的进度回调模式。
+
+**代码影响清单：**
+
+| 文件 | 改动 |
+|------|------|
+| `asr/faster_whisper_engine.py` | 完整实现 `transcribe()`：模型加载、推理、结果转换 |
+| `pyproject.toml` | `faster-whisper>=1.0` 从 optional-dependencies 移到主依赖（或加 import guard 保持可选） |
+
+**注意：** 暂不需要平台自动检测（那是 D57 的工作）。macOS 继续用 mlx-whisper，faster-whisper 面向 Docker/Linux/Windows。
+
+---
+
+### D57 — 跨平台支持（Windows）
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 用户需求 (2026-05-30) |
+| 复杂度 | 中-高（影响面广但每处改动小） |
+| 依赖 | **D20**（没有跨平台 ASR 引擎，Windows 管线无法运行） |
+
+**评审结论：六项具体改造，每项独立可控。** 好消息：路径处理全部使用 `pathlib.Path`（已跨平台），ffmpeg 检测用 `shutil.which`（已跨平台），`sys.platform` 尚未使用（不需要重构现有逻辑分支）。
+
+**代码影响清单（按严重度排序）：**
+
+| # | 位置 | 问题 | 严重度 |
+|---|------|------|--------|
+| 1 | `pyproject.toml:18` | `mlx-whisper>=0.4` 无条件依赖，Windows 安装即失败 | **阻断** |
+| 2 | `main_window.py:277` | `subprocess.run(["open", ...])` 是 macOS 专有命令 | 中 |
+| 3 | `cosyvoice_engine.py:154` | `PYTHONPATH` 拼接用 `:` 硬编码，Windows 需 `;`（改用 `os.pathsep`） | 中 |
+| 4 | `cosyvoice_engine.py:65` | `start_new_session=True` Windows 语义不同，需 `CREATE_NEW_PROCESS_GROUP` | 低 |
+| 5 | `pipeline.py:228` | `brew install ffmpeg` 提示信息需平台化 | 低 |
+| 6 | 全局 | 所有 `import mlx_whisper` 需包裹 `try/except` 或平台判断 | 中 |
+
+**实现要点：**
+- pyproject.toml: `mlx-whisper` 标记 `sys_platform == "darwin"`；`faster-whisper` 标记 `sys_platform != "darwin"` 或无条件（CTranslate2 跨平台）
+- CosyVoice worker 在 Windows 上不可用（conda 环境隔离），导入时给出提示，降级到 ChatTTS/Edge-TTS
+- 平台检测统一放在一个工具函数中（如 `src/platform_utils.py`），避免散落各处
+
+---
+
+### D58 — ChatTTS 引擎支持
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 用户需求 (2026-05-30) |
+| 复杂度 | 中 |
+| 依赖 | 无 |
+
+**评审结论：实现可行，注意语速参数验证和模型下载体验。** ChatTTS `infer()` 有 `speed` 参数（默认 1.0）可控制语速，但取值范围和中文效果需实测。模型首次运行自动下载约 2GB，需进度提示。内存方面 ChatTTS 和 CosyVoice 不能同时加载。
+
+**代码影响清单：**
+
+| 文件 | 改动 |
+|------|------|
+| 新建 `tts/chattts_engine.py` | 实现 `TTSEngine` ABC：模型加载、`synthesize()`、语速控制 |
+| `tts/__init__.py:21-24` | 工厂注册 `chattts` |
+| `config.py:58` | `TTSConfig.engine` Literal 添加 `"chattts"` |
+| `config_panel.py:83-86` | `_TTS_ENGINE_DISPLAY` 添加 `"chattts": "ChatTTS"` |
+| `pipeline.py:330-356` | 降级链更新：CosyVoice → ChatTTS → Edge-TTS |
+
+**待验证项：**
+- ChatTTS `speed` 参数取值范围和中文效果实测
+- 模型下载进度能否通过回调报告
+- 内存峰值（与 CosyVoice 2GB+ 对比）
+
+---
+
+### D56 — ASR/翻译结果一键复制
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 用户需求 (2026-05-30) |
+| 复杂度 | 中 |
+| 依赖 | 无 |
+
+**评审结论：发现设计问题需一并修复。** 当前 `transcript_updated` 信号在翻译阶段会**覆盖** ASR 文本（`pipeline.py:267` emit 原文 → `pipeline.py:303` emit 双语覆盖），ASR 原文在 UI 上消失，无法复制。缓存方案见实现要点。
+
+**代码影响清单：**
+
+| 文件 | 行号 | 改动 |
+|------|------|------|
+| `gui/transcript_panel.py` | 全文 | 缓存 `_asr_text` + `_translation_text` 两份数据；顶部加"复制原文""复制译文"按钮；使用 `QApplication.clipboard()` |
+| `pipeline.py` | 267,303 | 可选：拆分信号为 `asr_transcript_ready` + `translation_ready`（或保留现有信号加 stage 参数） |
+
+**实现要点（最小方案，不改信号层）：**
+- TranscriptPanel 内维护 `_asr_text: str` 和 `_translation_text: str`
+- `_on_transcript_updated` 根据当前管线阶段判断是 ASR 还是翻译结果，分别缓存
+- 顶部 toolbar 加两个 QPushButton："复制原文" / "复制译文"
+- 使用 `QApplication.clipboard().setText()` 写入系统剪贴板
+- 管线完成后（`pipeline_finished`）按钮保持可用
+
+---
+
+## v1.2 实现顺序
+
+```
+D55（删滑块）──→ D2（音频进度）──→ D20（FasterWhisper）──→ D57（Windows）
+                                                              │
+                    D58（ChatTTS）──→ D56（复制功能）←────────┘
+```
+
+- **D55 最先**：纯删除，验证 v1.2 方向，0 风险
+- **D2 其次**：单方法改造，改动面最小
+- **D20→D57 依赖链**：先做跨平台 ASR 引擎，再做平台适配
+- **D58→D56 并行链**：ChatTTS 独立实现；D56 放最后避免同一文件（transcript_panel + pipeline）反复修改
+
+---
+
+## v1.2 可选
+
+从 v1.1 可选遗留的低影响项。
+
+| # | 债务 | 来源 | 影响 |
+|---|------|------|------|
+| D22 | 进度回调为转录完成后模拟非实时 | 4-2 review | 进度条跳跃 |
+| D23 | edge-tts 无重试机制 | 4-4 review | 网络波动导致失败 |
+| D29 | 零时长视频（duration=0.0）会通过校验 | 3-1 review | 损坏视频未拦截 |
+| D30 | 跳段进度消息偏差（4-3/4-4/4-5 共享）— v1.1 部分修复，可能仍有边界情况 | 4-3/4-4/4-5 review | 进度显示不准 |
+| D59 | **ASR 专有名词 UI 配置入口** — 当前 `_DEFAULT_PROPER_NOUNS` 硬编码通用技术词汇（Claude Code、GPT-4、PySide6 等），不管视频内容如何都会被加入 initial_prompt，可能污染不相关内容的识别结果；且用户无法添加自己领域的专有名词（人名、地名、专业术语）。需在 ConfigPanel ASR 区块添加：(1) 多行文本框让用户输入自定义专有名词（逗号分隔）；(2) "使用默认技术词汇"复选框控制是否合并默认列表。配置层面新增 `asr.use_default_proper_nouns: bool = true` 字段 | 用户反馈 | 专有名词识别不准，影响翻译质量；用户无法自定义领域词汇 |
+
 ## v2.0+
 
-需要架构变更或大量工作，v1.1 不做。
+需要架构变更或大量工作，v1.2 不做。
 
 | # | 债务 | 来源 |
 |---|------|------|
@@ -67,7 +259,6 @@
 | D6 | stage_failed 与 pipeline_finished 信号顺序无文档 | 4-1 review |
 | D11 | `mx.synchronize()` 无超时保护 — MLX 不提供超时参数，v1 串行管线 GPU 挂起概率极低 | 4-2 review (2026-05-22) |
 | D21 | Docker 无 CLI/headless 模式 | 1-6 review |
-| D20 | FasterWhisperEngine 未实现（已有 MLXWhisperEngine 替代，可能不再需要） | 1-6 review |
 | D24 | `__file__` 在 frozen/zipimport 中为 None — v3 dmg/pkg 时处理 | 2-3 review |
 | D19 | 容器以 root 运行 — Dockerfile 缺 USER 指令 | 1-6 review |
 | D18 | CosyVoice 未在 Docker 镜像中安装（subprocess 桥需 conda 环境，Docker 内不可用） | 1-6 review |
@@ -122,4 +313,11 @@ CosyVoice 已通过 subprocess 桥集成（2026-05-22），使用独立 conda �
 | — | _preload_check_tts 方法名微瑕 | 4-2 review | 命名不影响功能 |
 | — | 全部段 source_text 为空时无 progress | 4-3 review | ASR 输出不可能全空 |
 | — | config.yaml 翻译引擎 nllb→glm 变更 | 5-1 review R2 | 不影响功能 |
+
+## Deferred from: code review of v1.2-2-1 (2026-05-30)
+
+| # | 债务 | 来源 | 影响 |
+|---|------|------|------|
+| D2-CR1 | **`_read_ffmpeg_progress` 超时依赖 stderr 输出** — 超时检查在 stderr 循环内部，若 ffmpeg 无输出则永不触发（实际总会输出，风险极低） | 2.2-1 review | 极端情况下超时失效 |
+| D2-CR2 | **abort 竞态导致错误消息不精确** — 主线程 `abort()` terminate 进程先于后台线程 `_check_abort()` 触发时，抛出"音频提取失败"而非"用户中止"，清理正确仅消息不准 | 2.2-1 review | 用户体验轻微偏差 |
 | — | 降级时 progress 可能回退 | 5-1 review R1 | 预存问题，非本次引入 |

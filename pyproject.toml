@@ -20,6 +20,7 @@ dependencies = [
     "edge-tts>=7.0",
     "python-dotenv>=1.0",
     "audioop-lts>=0.2.2",
+    "ChatTTS>=0.1; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,14 @@
 # Deferred Work (v1 完成后清理)
 
-> 最后更新: 2026-06-05 (code review: 删除默认专有名词)
+> 最后更新: 2026-06-13 (Epic 1-v2.0 retro: 补登记 CI workflow 推迟 + scheme_manager DEPRECATED)
 > 分类标准：v1.2 必做 / v1.2 可选 / v2.0+ / 已过期可丢弃
+
+## Deferred from: Epic 1-v2.0 retro (2026-06-13)
+
+- [Defer] **CI workflow `.github/workflows/{test,code-quality,nightly}.yml` 推迟到 v2.0 全部完成后处理** — Story v2.0-1-2 范围扩展引入，但未经真实 Windows runner 验证；Mr.ChouCj 决策（2026-06-13 retro）：v2.0 主线不依赖未验证 CI，待 Epic 2-4 全部完成后再启用跨平台 CI。文件已存在于 working tree，可在 v2.0 完成后直接 commit
+- [Defer] **`src/scheme_manager.py` 已标 DEPRECATED** — Epic 1-v2.0 删除"已保存方案"UI 后，本底层模块成孤儿代码。已加文件头注释标记，未来恢复"自定义方案"功能可参考，否则可安全删除。详见 Epic 1-v2.0 retro
+- [Defer] **v2.0-1-2 中 `CREATE_NEW_PROCESS_GROUP` 常量值 spec 文档需修正** — 实现使用正确值 `0x00000200`，但 Story spec 文档仍写错误的 `0x00000008`。下一个维护 platform_utils 的开发者读到 spec 会被误导
+- [Defer] **v2.0-1-2 中 README 标注 ChatTTS 许可证类型需复核** — v1.2 retro A3 要求"注明 CC BY-NC 4.0"，但实际实现加的是 "MIT License"。两者矛盾，需确认 ChatTTS 真实许可证类型后统一文档
 
 ## Deferred from: code review (2026-06-05)
 
@@ -559,3 +566,14 @@ CosyVoice 已通过 subprocess 桥集成（2026-05-22），使用独立 conda �
 | D2-CR1 | **`_read_ffmpeg_progress` 超时依赖 stderr 输出** — 超时检查在 stderr 循环内部，若 ffmpeg 无输出则永不触发（实际总会输出，风险极低） | 2.2-1 review | 极端情况下超时失效 |
 | D2-CR2 | **abort 竞态导致错误消息不精确** — 主线程 `abort()` terminate 进程先于后台线程 `_check_abort()` 触发时，抛出"音频提取失败"而非"用户中止"，清理正确仅消息不准 | 2.2-1 review | 用户体验轻微偏差 |
 | — | 降级时 progress 可能回退 | 5-1 review R1 | 预存问题，非本次引入 |
+
+## Deferred from: code review of v2.0-1-1-d64-remove-scheme-ui (2026-06-13)
+
+- [Defer] `src/scheme_manager.py` 已是死代码，无生产代码引用 — AC4 要求保留以备未来复用
+- [Defer] `tests/test_scheme_manager.py` 测试死代码 — AC4 要求保留
+- [Defer] AC5 运行时验证待确认 — 需手动启动应用 + 运行 ruff/mypy/pytest
+
+## Deferred from: code review of v2.0-1-2-fix-windows-test-and-license (2026-06-13)
+
+- [Defer] Spec 常量 `0x00000008` 错误 — 实际 Windows API 值为 `0x00000200`，实现已使用正确值，spec 文档需修正
+- [Defer] `README_zh.md` 缺少第三方依赖章节 — 需中文翻译同步

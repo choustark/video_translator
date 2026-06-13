@@ -203,3 +203,16 @@ uv run mypy src/
 ## License
 
 MIT
+
+### Third-Party Dependencies
+
+This project uses the following open-source libraries:
+
+- **ChatTTS** — MIT License (https://github.com/2noise/ChatTTS)
+- **CosyVoice** — Apache 2.0 License (https://github.com/FunAudioLLM/CosyVoice) (https://github.com/FunAudioLLM/CosyVoice)
+- **mlx-whisper** — MIT License
+- **faster-whisper** — MIT License
+- **PySide6 (Qt)** — LGPLv3 License
+- **edge-tts** — MIT License
+
+**Note:** `pyproject.toml` includes core dependencies. ChatTTS and CosyVoice are optional user-installed dependencies — see engine-specific setup guides.

@@ -1,0 +1,57 @@
+name: Code Quality Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Set up Python
+      run: |
+        uv venv --python 3.13
+        echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        uv pip install -e .
+        uv pip install ruff mypy types-pyyaml types-psutil
+
+    - name: Run ruff linting
+      run: |
+        uv run ruff check src/
+
+    - name: Run ruff formatting check
+      run: |
+        uv run ruff format --check src/
+
+    - name: Run mypy type checking
+      run: |
+        uv run mypy src/ --ignore-missing-imports
+      continue-on-error: true  # mypy 可能会因为第三方库缺少类型存根而失败
+
+    - name: Generate coverage report
+      run: |
+        uv pip install pytest-cov
+        uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term -k "not cosyvoice"
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false

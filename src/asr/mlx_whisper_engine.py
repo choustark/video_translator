@@ -1,3 +1,15 @@
+"""MLX-Whisper 引擎 — Apple Silicon 优化的 Whisper ASR。
+
+MLX-Whisper 是 Whisper 模型的 Apple Silicon 优化实现（MIT License）。
+利用 MPS/Metal 加速，支持 M 系列 GPU，提供本地高质量语音识别。
+OOM 时可能直接 segfault，加载前必须用 psutil 预检可用内存。
+
+GitHub: https://github.com/ml-explore/mlx-examples/tree/main/whisper
+License: MIT License
+
+GitHub: https://github.com/ml-explore/mlx-whisper
+License: MIT License
+"""
 from __future__ import annotations
 
 import gc

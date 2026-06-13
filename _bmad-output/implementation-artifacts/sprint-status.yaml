@@ -1,5 +1,5 @@
-# generated: 2026-05-13
-# last_updated: 2026-05-14
+# generated: 2026-06-13
+# last_updated: 2026-06-13
 # project: video_translator
 # project_key: NOKEY
 # tracking_system: file-system
@@ -34,14 +34,18 @@
 # - Developer typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: "2026-05-13"
-last_updated: "2026-05-31" # updated: v1.2-4-1 D58 完成
+generated: "2026-06-13"
+last_updated: "2026-06-13 (Epic 1-v2.0 retrospective 完成)"
 project: "video_translator"
 project_key: "NOKEY"
 tracking_system: "file-system"
 story_location: "_bmad-output/implementation-artifacts"
 
 development_status:
+  # ─────────────────────────────────────────────
+  # v1.0: MVP（15 Story）
+  # ─────────────────────────────────────────────
+
   # Epic 1: 项目基础与配置管理 (15 FRs)
   epic-1: done
   1-1-project-scaffold-init: done
@@ -83,62 +87,100 @@ development_status:
   epic-5-retrospective: done
 
   # ─────────────────────────────────────────────
-  # v1.1: 质量提升与 UX 修补（FR44~FR58）
-  # 详见 _bmad-output/planning-artifacts/prd-v1.1.md
+  # v1.1: 质量提升与 UX 修补（8 Story）
   # ─────────────────────────────────────────────
 
-  # Epic 1-v1.1: ASR 质量提升 (FR50, FR51)
+  # Epic 1-v1.1: ASR 质量提升
   epic-1-v1.1: done
   1.1-1-asr-proper-noun-guidance: done
   1.1-2-asr-fragment-merging: done
+  epic-1-v1.1-retrospective: done
 
-  # Epic 2-v1.1: 翻译与 TTS 质量提升 (FR52, FR53, FR54)
+  # Epic 2-v1.1: 翻译与 TTS 质量提升
   epic-2-v1.1: done
   2.1-1-translation-duration-constraint: done
   2.1-2-rubberband-speed-change: done
   2.1-3-edge-tts-rate-control: done
+  epic-2-v1.1-retrospective: done
 
-  # Epic 3-v1.1: 配置面板 UX 修补 (FR46, FR47, FR48, FR49)
+  # Epic 3-v1.1: 配置面板 UX 修补
   epic-3-v1.1: done
   3.1-1-progress-message-fix: done
   3.1-2-preset-tracking-and-restore: done
   3.1-3-engine-ui-switch: done
   3.1-4-resource-estimate-tooltip: done
+  epic-3-v1.1-retrospective: done
 
-  # Epic 4-v1.1: 字幕样式预设 (FR55, FR56, FR57, FR58)
+  # Epic 4-v1.1: 字幕样式预设
   epic-4-v1.1: done
   4.1-1-subtitle-style-preset-system: done
   4.1-2-subtitle-style-ui-persist: done
+  epic-4-v1.1-retrospective: done
 
-  # Epic 5-v1.1: 稳定性修复 (FR44, FR45)
+  # Epic 5-v1.1: 稳定性修复
   epic-5-v1.1: done
   5.1-1-close-event-safe-abort: done
   5.1-2-memory-threshold-unification: done
+  epic-5-v1.1-retrospective: done
 
   # ─────────────────────────────────────────────
-  # v1.2: 界面精简 + 跨平台 + TTS 扩展（6 项）
-  # 评审日期: 2026-05-30
-  # 详见 _bmad-output/implementation-artifacts/deferred-work.md
+  # v1.2: 界面精简 + 跨平台 + TTS 扩展（6 Story）
   # ─────────────────────────────────────────────
 
   # Epic 1-v1.2: 界面精简
-  # 删除语速滑块，消除三层自动化后已无用的手动控件
   epic-1-v1.2: done
   v1.2-1-1-d55-remove-speed-slider: done
+  epic-1-v1.2-retrospective: done
 
   # Epic 2-v1.2: 管线体验提升
-  # 音频提取实时进度 + ASR/翻译结果一键复制
   epic-2-v1.2: done
   v1.2-2-1-d2-audio-extract-progress: done
   v1.2-2-2-d56-copy-asr-translation-results: done
+  epic-2-v1.2-retrospective: done
 
-  # Epic 3-v1.2: 跨平台基础（D20 → D57 依赖链）
-  # FasterWhisperEngine + Windows 平台适配
+  # Epic 3-v1.2: 跨平台基础
   epic-3-v1.2: done
   v1.2-3-1-d20-faster-whisper-engine: done
   v1.2-3-2-d57-windows-cross-platform: done
+  epic-3-v1.2-retrospective: done
 
   # Epic 4-v1.2: TTS 引擎扩展
-  # ChatTTS 本地引擎，CosyVoice→ChatTTS→Edge-TTS 降级链
   epic-4-v1.2: done
   v1.2-4-1-d58-chattts-engine: done
+  epic-v1.2-retrospective: done
+
+  # ─────────────────────────────────────────────
+  # v2.0: 体验进阶（10 Story）
+  # 规划日期: 2026-06-13
+  # 详见 _bmad-output/planning-artifacts/sprint-change-proposal-2026-06-13.md
+  # ─────────────────────────────────────────────
+
+  # Epic 1-v2.0: 体验清理
+  # 删除方案 UI + 修复已知问题 + 执行纪律
+  epic-1-v2.0: done
+  v2.0-1-1-d64-remove-scheme-ui: done
+  v2.0-1-2-fix-windows-test-and-license: done
+  v2.0-1-3-execution-discipline: done
+  epic-1-v2.0-retrospective: done
+
+  # Epic 2-v2.0: 管线韧性
+  # 时长放宽 + 断点续传 + Edge-TTS 重试
+  epic-2-v2.0: backlog
+  v2.0-2-1-d61a-relax-duration-limit: backlog
+  v2.0-2-2-d61b-checkpoint-resume: backlog
+  v2.0-2-3-d23-edgetts-retry: backlog
+  epic-2-v2.0-retrospective: optional
+
+  # Epic 3-v2.0: 声音克隆
+  # CosyVoice cross_lingual 声音克隆
+  epic-3-v2.0: backlog
+  v2.0-3-1-d60-cosyvoice-voice-cloning: backlog
+  epic-3-v2.0-retrospective: optional
+
+  # Epic 4-v2.0: 质量修补
+  # 零时长校验 + ASR 进度实时 + 信号文档
+  epic-4-v2.0: backlog
+  v2.0-4-1-d29-zero-duration-validation: backlog
+  v2.0-4-2-d22-asr-progress-realtime: backlog
+  v2.0-4-3-d6-signal-order-documentation: backlog
+  epic-4-v2.0-retrospective: optional

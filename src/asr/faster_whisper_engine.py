@@ -1,3 +1,15 @@
+"""Faster-Whisper 引擎 — 跨平台 Whisper ASR（CTranslate2 后端）。
+
+Faster-Whisper 是 Whisper 模型的 CTranslate2 优化实现（MIT License）。
+支持 CPU 和 CUDA 推理，Windows/Linux 平台的首选 ASR 引擎。
+相比原版 Whisper 更快、更轻量，适合跨平台部署。
+
+GitHub: https://github.com/SYSTRAN/faster-whisper
+License: MIT License
+
+GitHub: https://github.com/guillaumekln/faster-whisper
+License: MIT License
+"""
 from __future__ import annotations
 
 import gc
@@ -40,7 +52,10 @@ class FasterWhisperEngine(ASREngine):
         all_nouns = _build_proper_nouns_list(user_nouns=self.config.proper_nouns)
         initial_prompt = _build_initial_prompt(all_nouns)
 
-        logger.info("ASR | 开始 | audio=%s, model=%s, device=cpu, compute_type=int8", audio_path, self.config.model_path)
+        logger.info(
+            "ASR | 开始 | audio=%s, model=%s, device=cpu, compute_type=int8",
+            audio_path, self.config.model_path
+        )
 
         try:
             model = WhisperModel(

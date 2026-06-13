@@ -1,3 +1,15 @@
+"""CosyVoice 引擎 — 高质量本地中文语音合成。
+
+CosyVoice 是一个开源的高质量 TTS 引擎（Apache 2.0 License），支持多语言、多说话人。
+通过 subprocess 桥接独立 conda 环境（Python 3.10）运行，与项目 Python 3.13 隔离。
+支持语速参数控制，输出 24kHz WAV 音频。
+
+GitHub: https://github.com/FunAudioLLM/CosyVoice
+License: Apache 2.0 License
+
+GitHub: https://github.com/FunAudioLLM/CosyVoice
+License: Apache 2.0 License
+"""
 from __future__ import annotations
 
 import json

@@ -1,3 +1,8 @@
+# DEPRECATED: 本模块自 v2.0-1-1（2026-06-13）起不再使用。
+# 原"已保存方案"UI 已在 Epic 1-v2.0 删除，本底层模块保留备查。
+# 详见: _bmad-output/implementation-artifacts/v2.0/epic-1-v2.0-retro-2026-06-13.md
+# 未来若恢复"自定义方案"功能可参考本实现，否则可安全删除。
+
 from pathlib import Path
 
 from src.config import AppConfig, load_config, save_config

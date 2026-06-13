@@ -340,6 +340,3 @@ class MainWindow(QMainWindow):
         """返回当前面板配置的深拷贝（pydantic AppConfig 模型）"""
         return self._config_panel.get_config()
 
-    def refresh_schemes(self) -> None:
-        """委托 ConfigPanel 刷新已保存方案下拉框。"""
-        self._config_panel.refresh_schemes()

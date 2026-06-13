@@ -1,3 +1,15 @@
+"""Edge-TTS 引擎 — 微软免费云语音合成。
+
+Edge-TTS 是微软提供的免费文本转语音服务（MIT License）。
+支持 `rate` 参数控制语速，基于 `CHARS_PER_SEC`（4字/秒）自动计算。
+异步 API 在同步管线线程中通过事件循环管理。
+
+GitHub: https://github.com/rany2/edge-tts
+License: MIT License
+
+GitHub: https://github.com/rany2/edge-tts
+License: MIT License
+"""
 from __future__ import annotations
 
 import logging

@@ -9,10 +9,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QStyle,
     QTextEdit,
@@ -31,7 +29,6 @@ from src.config import (
     save_api_key_to_env,
     save_config,
 )
-from src.exceptions import ConfigError
 from src.gui.constants import (
     COLOR_SUCCESS,
     COLOR_WARNING,
@@ -42,7 +39,6 @@ from src.gui.constants import (
     SPACING_SECTION_TITLE_TOP,
     SPACING_XS,
 )
-from src.scheme_manager import SchemeManager
 from src.validators import (
     ValidationError,
     validate_all,
@@ -92,9 +88,6 @@ _SUBTITLE_STYLE_DISPLAY: dict[str, str] = {
     "white_clean": "白字无边",
 }
 
-_SCHEME_NAME_RE = re.compile(r"^[\w一-鿿-]+$")
-_SCHEMES_DIR = Path.home() / ".video_translator" / "schemes"
-
 
 class ConfigPanel(QWidget):
     validation_changed = Signal(bool)
@@ -111,7 +104,6 @@ class ConfigPanel(QWidget):
         super().__init__(parent)
         self._config_path = config_path
         self._file_config: AppConfig | None = None
-        self._scheme_mgr = SchemeManager(_SCHEMES_DIR)
         self._video_path: Path | None = None
         self._last_preset_key: str = "high_quality"
 
@@ -166,30 +158,6 @@ class ConfigPanel(QWidget):
         preset_row.addWidget(self._preset_info_label)
         preset_form.addRow(self._field_label("预设方案"), preset_row)
         layout.addLayout(preset_form)
-
-        layout.addSpacing(SPACING_MD)
-
-        scheme_form = self._make_form()
-        self._scheme_combo = QComboBox()
-        self._scheme_combo.addItem("（无）", "")
-        scheme_form.addRow(self._field_label("已保存方案"), self._scheme_combo)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(SPACING_XS)
-        self._btn_save_scheme = QPushButton("保存")
-        self._btn_delete_scheme = QPushButton("删除")
-        self._btn_import_scheme = QPushButton("导入")
-        self._btn_export_scheme = QPushButton("导出")
-        for btn in (
-            self._btn_save_scheme,
-            self._btn_delete_scheme,
-            self._btn_import_scheme,
-            self._btn_export_scheme,
-        ):
-            btn.setObjectName("inlineButton")
-            btn_row.addWidget(btn)
-        scheme_form.addRow("", btn_row)
-        layout.addLayout(scheme_form)
 
         layout.addSpacing(SPACING_SECTION_TITLE_TOP)
         layout.addWidget(self._section_divider())
@@ -338,11 +306,6 @@ class ConfigPanel(QWidget):
         self._tts_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._tts_path_input.textChanged.connect(self._on_config_changed)
         self._subtitle_style_combo.currentIndexChanged.connect(self._on_config_changed)
-        self._scheme_combo.currentIndexChanged.connect(self._on_scheme_selected)
-        self._btn_save_scheme.clicked.connect(self._save_current_scheme)
-        self._btn_delete_scheme.clicked.connect(self._delete_selected_scheme)
-        self._btn_import_scheme.clicked.connect(self._import_scheme)
-        self._btn_export_scheme.clicked.connect(self._export_scheme)
 
     def _on_preset_changed(self, _index: int) -> None:
         key = self._preset_combo.currentData()
@@ -619,7 +582,6 @@ class ConfigPanel(QWidget):
             self._last_preset_key = config.preset
 
         self._fill_from_config(config)
-        self.refresh_schemes()
         self._schedule_validation()
 
     def get_config(self) -> AppConfig:
@@ -650,138 +612,3 @@ class ConfigPanel(QWidget):
         else:
             self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
             self._api_key_toggle.setText("显示")
-
-    # --- 方案管理 ---
-
-    def refresh_schemes(self) -> None:
-        """刷新已保存方案下拉框，重新加载方案列表并恢复之前选中项。"""
-        self._scheme_combo.blockSignals(True)
-        current_data = self._scheme_combo.currentData()
-        self._scheme_combo.clear()
-        self._scheme_combo.addItem("（无）", "")
-        for name in self._scheme_mgr.list_schemes():
-            self._scheme_combo.addItem(name, name)
-        idx = self._scheme_combo.findData(current_data)
-        self._scheme_combo.setCurrentIndex(max(idx, 0))
-        self._scheme_combo.blockSignals(False)
-
-    def _on_scheme_selected(self, index: int) -> None:
-        name = self._scheme_combo.itemData(index)
-        if not name:
-            return
-        try:
-            config = self._scheme_mgr.load_scheme(name)
-            current_api_key = self._api_key_input.text()
-            self._fill_from_config(config)
-            if current_api_key:
-                self._api_key_input.setText(current_api_key)
-            self._on_config_changed()
-        except ConfigError as e:
-            QMessageBox.warning(self, "加载方案失败", f"{e}\n\n建议: {e.suggestion}")
-
-    def _save_current_scheme(self) -> None:
-        name, ok = QInputDialog.getText(self, "保存方案", "方案名称:")
-        if not ok or not name:
-            return
-        name = name.strip()
-        if not name or not _SCHEME_NAME_RE.match(name) or len(name) > 50:
-            QMessageBox.warning(
-                self,
-                "名称无效",
-                "方案名仅支持字母、数字、中文、下划线和横线，最长 50 字符。",
-            )
-            return
-        existing = self._scheme_mgr.list_schemes()
-        if name in existing:
-            reply = QMessageBox.question(
-                self,
-                "覆盖方案",
-                f"方案 '{name}' 已存在，是否覆盖？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        config = self.get_config()
-        self._scheme_mgr.save_scheme(name, config)
-        self.refresh_schemes()
-        idx = self._scheme_combo.findData(name)
-        if idx >= 0:
-            self._scheme_combo.setCurrentIndex(idx)
-
-    def _delete_selected_scheme(self) -> None:
-        name = self._scheme_combo.currentData()
-        if not name:
-            return
-        reply = QMessageBox.question(
-            self,
-            "删除方案",
-            f"确定要删除方案 '{name}' 吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            self._scheme_mgr.delete_scheme(name)
-            self.refresh_schemes()
-        except ConfigError as e:
-            QMessageBox.warning(self, "删除失败", str(e))
-
-    def _import_scheme(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "导入方案",
-            str(Path.home()),
-            "YAML 文件 (*.yaml *.yml)",
-        )
-        if not path:
-            return
-        source = Path(path)
-        name = source.stem.strip()
-        if not name or not _SCHEME_NAME_RE.match(name) or len(name) > 50:
-            QMessageBox.warning(
-                self,
-                "名称无效",
-                f"文件名 '{source.stem}' 不符合方案命名规则。\n"
-                "方案名仅支持字母、数字、中文、下划线和横线，最长 50 字符。",
-            )
-            return
-        existing = self._scheme_mgr.list_schemes()
-        if name in existing:
-            reply = QMessageBox.question(
-                self,
-                "覆盖方案",
-                f"方案 '{name}' 已存在，是否覆盖？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        try:
-            self._scheme_mgr.import_scheme(source, name)
-            self.refresh_schemes()
-            idx = self._scheme_combo.findData(name)
-            if idx >= 0:
-                self._scheme_combo.setCurrentIndex(idx)
-        except ConfigError as e:
-            QMessageBox.warning(
-                self,
-                "导入失败",
-                f"文件: {source.name}\n原因: {e}\n建议: {e.suggestion}",
-            )
-
-    def _export_scheme(self) -> None:
-        name = self._scheme_combo.currentData()
-        if not name:
-            QMessageBox.information(self, "导出方案", "请先选择一个已保存的方案。")
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出方案",
-            f"{name}.yaml",
-            "YAML 文件 (*.yaml)",
-        )
-        if not path:
-            return
-        try:
-            self._scheme_mgr.export_scheme(name, Path(path))
-        except ConfigError as e:
-            QMessageBox.warning(self, "导出失败", str(e))

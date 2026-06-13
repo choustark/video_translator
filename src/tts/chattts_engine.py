@@ -1,7 +1,10 @@
 """ChatTTS 引擎 — 本地中文语音合成（无精确语速控制）。
 
-ChatTTS 是一个开源中文 TTS 引擎，输出 24kHz WAV 音频。
+ChatTTS 是一个开源中文 TTS 引擎（MIT 许可证），输出 24kHz WAV 音频。
 它没有 speed/rate 参数，依赖上游翻译时长约束 + 下游 rubberband 变速对齐。
+
+GitHub: https://github.com/2noise/ChatTTS
+License: MIT License
 """
 
 from __future__ import annotations

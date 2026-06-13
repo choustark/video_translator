@@ -40,5 +40,10 @@ def get_process_group_kwargs() -> dict:
     Windows:     creationflags=CREATE_NEW_PROCESS_GROUP
     """
     if IS_WINDOWS:
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        # 检查 subprocess 模块是否有 CREATE_NEW_PROCESS_GROUP 属性
+        # macOS/Linux Python 中不存在此常量，使用硬编码值备选
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        # CREATE_NEW_PROCESS_GROUP = 0x00000200 (512)
+        return {"creationflags": 0x00000200}
     return {"start_new_session": True}

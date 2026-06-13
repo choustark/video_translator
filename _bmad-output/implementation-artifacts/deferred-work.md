@@ -1,7 +1,12 @@
 # Deferred Work (v1 完成后清理)
 
-> 最后更新: 2026-05-30 (v1.1 retro + 语速滑块评估 + 复制功能需求)
+> 最后更新: 2026-06-05 (code review: 删除默认专有名词)
 > 分类标准：v1.2 必做 / v1.2 可选 / v2.0+ / 已过期可丢弃
+
+## Deferred from: code review (2026-06-05)
+
+- [Defer] sprint-status.yaml 与功能改动混在同一批未提交改动中 — BMad 既有模式，sprint 状态更新和代码改动习惯性一起提交，后续可考虑分离
+- [Defer] `tests/test_asr/test_faster_whisper_engine.py` 缺少空 proper_nouns 时 initial_prompt 的测试 — `test_mlx_whisper_engine.py` 已有等价覆盖（`_build_initial_prompt([])`），但 FasterWhisper 路径未覆盖此边界条件，虽然 `_build_initial_prompt` 已有 `if not nouns: return ""` guard
 
 ---
 
@@ -247,22 +252,255 @@ D55（删滑块）──→ D2（音频进度）──→ D20（FasterWhisper）
 | D23 | edge-tts 无重试机制 | 4-4 review | 网络波动导致失败 |
 | D29 | 零时长视频（duration=0.0）会通过校验 | 3-1 review | 损坏视频未拦截 |
 | D30 | 跳段进度消息偏差（4-3/4-4/4-5 共享）— v1.1 部分修复，可能仍有边界情况 | 4-3/4-4/4-5 review | 进度显示不准 |
-| D59 | **ASR 专有名词 UI 配置入口** — 当前 `_DEFAULT_PROPER_NOUNS` 硬编码通用技术词汇（Claude Code、GPT-4、PySide6 等），不管视频内容如何都会被加入 initial_prompt，可能污染不相关内容的识别结果；且用户无法添加自己领域的专有名词（人名、地名、专业术语）。需在 ConfigPanel ASR 区块添加：(1) 多行文本框让用户输入自定义专有名词（逗号分隔）；(2) "使用默认技术词汇"复选框控制是否合并默认列表。配置层面新增 `asr.use_default_proper_nouns: bool = true` 字段 | 用户反馈 | 专有名词识别不准，影响翻译质量；用户无法自定义领域词汇 |
+| ~~D59~~ | **ASR 专有名词 UI 配置入口** — 当前 `_DEFAULT_PROPER_NOUNS` 硬编码通用技术词汇（Claude Code、GPT-4、PySide6 等），不管视频内容如何都会被加入 initial_prompt，可能污染不相关内容的识别结果；且用户无法添加自己领域的专有名词（人名、地名、专业术语）。需在 ConfigPanel ASR 区块添加：(1) 多行文本框让用户输入自定义专有名词（逗号分隔）；(2) "使用默认技术词汇"复选框控制是否合并默认列表。配置层面新增 `asr.use_default_proper_nouns: bool = true` 字段 | 用户反馈 | **已解决** — `config_panel.py` 已实现专有名词 QTextEdit 输入框（行 220-225），支持逗号/换行/分号分隔解析（行 493-496），配置双向绑定（行 381/506） |
 
-## v2.0+
+## v2.0（体验进阶）
 
-需要架构变更或大量工作，v1.2 不做。
+> 重组日期: 2026-06-07
+> PRD 路线图同步更新，四项核心功能 + 配套债务
 
-| # | 债务 | 来源 |
-|---|------|------|
-| D7 | 无 cancel/abort 机制 — v2.0 断点续传时实现 | 4-1 review |
-| D6 | stage_failed 与 pipeline_finished 信号顺序无文档 | 4-1 review |
-| D11 | `mx.synchronize()` 无超时保护 — MLX 不提供超时参数，v1 串行管线 GPU 挂起概率极低 | 4-2 review (2026-05-22) |
-| D21 | Docker 无 CLI/headless 模式 | 1-6 review |
-| D24 | `__file__` 在 frozen/zipimport 中为 None — v3 dmg/pkg 时处理 | 2-3 review |
-| D19 | 容器以 root 运行 — Dockerfile 缺 USER 指令 | 1-6 review |
-| D18 | CosyVoice 未在 Docker 镜像中安装（subprocess 桥需 conda 环境，Docker 内不可用） | 1-6 review |
-| AC1 | 异常捕获范围依赖模型加载时机 — 已通过 subprocess 桥确认，worker 异常通过 ImportError 传播 | 5-1 review R1 |
+---
+
+### D60 — CosyVoice 声音克隆
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | Winston 架构评估 + 实测验证 (2026-06-05) |
+| 复杂度 | 低（~100-150 行增量改动） |
+| 依赖 | 无（复用现有 CosyVoice subprocess 桥） |
+
+**背景：** PRD 路线图原规划 v3.0 使用 GPT-SoVITS 实现声音克隆。经架构评估发现 CosyVoice 已原生支持 zero-shot 声音克隆，无需引入新依赖。
+
+**实测验证结果 (2026-06-05, M5, CosyVoice-300M-SFT)：**
+
+| 模式 | API | 输出时长 | 推理耗时 | RTF | 额外输入 |
+|------|-----|---------|---------|-----|---------|
+| zero_shot | `inference_zero_shot(tts_text, prompt_text, prompt_wav)` | 7.3s | 25.5s | 3.4x | 需要参考文本 |
+| **cross_lingual** ✓ | `inference_cross_lingual(tts_text, prompt_wav)` | 6.8s | 19.8s | 2.9x | 只要参考音频 |
+| sft（基线） | `inference_sft(text, speaker)` | 6.7s | 16.7s | 2.5x | 无 |
+
+**选定方案：`inference_cross_lingual`**
+
+理由：
+1. 不需要参考音频对应的英文文本（ASR 虽然已有，但少一个依赖更简单）
+2. 英文参考音频 → 中文输出的跨语言场景正是 cross_lingual 的设计目标
+3. 推理耗时仅比 sft 基线增加 ~20%，可接受
+4. 质量经 Mr.ChouCj 主观验证，可接受
+
+**注意：** 当前模型 `CosyVoice-300M-SFT` 可用，但 CosyVoice 官方 zero-shot 推荐使用 `CosyVoice-300M` 或 `CosyVoice2-0.5B`，后续可升级模型提升克隆质量。
+
+**参考音频来源方案：**
+- 首选：自动从 ASR 分段中选取（置信度最高、3-10s 的段），用户零操作
+- 备选：用户手动上传参考音频文件（配置面板文件选择）
+
+**代码影响清单：**
+
+| 文件 | 改动 | 复杂度 |
+|------|------|--------|
+| `scripts/cosyvoice_worker.py` | 检测到 `reference_audio` 参数时走 `inference_cross_lingual` 而非 `inference_sft` | 低 |
+| `src/config.py` → `TTSConfig` | 新增 `reference_audio: str = ""` 字段 | 低 |
+| `src/tts/cosyvoice_engine.py` | 透传 `reference_audio` 参数到 worker stdin JSON | 低 |
+| `src/gui/` 配置面板 | 新增"参考音频"文件选择控件 | 中 |
+| `src/pipeline.py`（可选） | ASR 完成后自动选取最佳段作为参考音频 | 中 |
+
+**不改动的部分：**
+- 不新增 TTS 引擎（复用 CosyVoiceEngine）
+- 不新增依赖（CosyVoice 已集成）
+- 不改 subprocess 桥架构
+- 不改 TTSEngine ABC 接口
+
+---
+
+### D61 — Per-stage 断点续传 + 时长放宽
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | 架构评估 (2026-06-07)，替代原"长视频分段"方案 |
+| 复杂度 | 中低 |
+| 依赖 | 无 |
+
+**背景：** 原方案为"长视频分段处理"。经分析发现：(1) 管线每阶段已逐段流式处理，内存不随视频长度增长；(2) 分段会丢失翻译上下文、增加架构复杂度；(3) 真正的痛点是失败后从头重跑。因此改为 per-stage 断点续传。
+
+**需求拆分（两部分独立）：**
+
+#### D61a — 放宽时长限制（前置，极低复杂度）
+
+将 `MAX_DURATION_SECONDS` 从 1800（30 分钟）放宽到 7200（2 小时），同步更新 `validators.py` 和 `video_drop_area.py`。需增加磁盘空间校验（2 小时视频中间产物约 1GB）。
+
+| 文件 | 改动 |
+|------|------|
+| `src/gui/video_drop_area.py:28-29` | `MAX_DURATION_SECONDS = 7200` |
+| `src/validators.py:21` | `_MAX_VIDEO_DURATION_SECONDS = 7200` |
+| `src/validators.py` | 新增磁盘空间校验（估算：视频大小 × 3） |
+
+#### D61b — Per-stage 断点续传（核心）
+
+每个阶段完成后将中间状态持久化到 `.temp/` 目录。下次启动时检测到检查点文件，跳过已完成的阶段。
+
+**现有架构优势（不需要改的部分）：**
+- ✅ 失败时 `.temp/` 目录已保留（`_cleanup_temp` 只在成功时调用）
+- ✅ 中间产物（WAV、TTS 音频段）已在 `.temp/{video_hash}/` 中
+- ✅ 每阶段有 `_complete_stage()` — 天然的检查点写入时机
+
+**检查点文件格式：** `.temp/{video_hash}/checkpoint.json`
+
+```json
+{
+  "version": 1,
+  "video_path": "/path/to/video.mp4",
+  "video_size": 524288000,
+  "config_hash": "sha256:abc123...",
+  "completed_stages": ["音频提取", "ASR", "翻译"],
+  "current_stage": "TTS",
+  "audio_path": "audio.wav",
+  "segments_path": "segments_checkpoint.json",
+  "created_at": "2026-06-07T14:30:00",
+  "updated_at": "2026-06-07T14:35:22"
+}
+```
+
+**各阶段检查点内容：**
+
+| 阶段完成后 | 持久化内容 | 大小估算 |
+|-----------|-----------|---------|
+| 音频提取 | `checkpoint.json`（记录 audio_path） | <1KB |
+| ASR | `segments_checkpoint.json`（SubtitleSegment 列表，含 source_text） | ~50KB（2h 视频 ~500 段） |
+| 翻译 | `segments_checkpoint.json`（更新 translated_text） | ~100KB |
+| TTS | `segments_checkpoint.json`（更新 audio_path, audio_duration） | ~100KB + 音频文件（已在 .temp） |
+| 语速自适应 | `segments_checkpoint.json`（更新对齐后路径） | ~100KB |
+| 合成 | 删除检查点（管线完成） | 0 |
+
+**代码影响清单：**
+
+| 文件 | 改动 | 复杂度 |
+|------|------|--------|
+| `src/pipeline.py` | `_complete_stage()` 中写入检查点；`process()` 开头检测检查点并跳过已完成阶段；增加 `SubtitleSegment` ↔ JSON 序列化 | 中 |
+| `src/models.py` | `SubtitleSegment` 增加 `to_dict()` / `from_dict()` 方法 | 低 |
+| `src/gui/video_drop_area.py` | 检测到检查点时弹窗询问"检测到上次未完成的翻译，是否继续？" | 低 |
+| `src/pipeline.py` | `_cleanup_temp()` 成功时删除检查点文件 | 低 |
+
+**恢复逻辑（`process()` 入口）：**
+
+```
+1. 计算 temp_dir 路径（已有逻辑：output/.temp/{video_hash}/）
+2. 检查 checkpoint.json 是否存在
+3. 如果存在：
+   a. 校验 video_path + video_size + config_hash 是否匹配
+   b. 匹配 → 加载 segments_checkpoint.json，跳到 current_stage 继续执行
+   c. 不匹配 → 删除旧检查点，从头开始
+4. 如果不存在 → 正常流程
+```
+
+**不修改的部分：**
+- 不改 TTSEngine / ASREngine 接口
+- 不改信号机制
+- 不改临时目录结构
+- 不改 abort 机制（abort 后检查点自动保留，下次可续传）
+
+---
+
+### D64 — 删除"已保存方案"UI 区域
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | Sally UX 评审 (2026-06-07) |
+| 复杂度 | 低（纯删除 ~215 行） |
+| 依赖 | 无 |
+
+**背景：** 配置面板顶部"已保存方案"下拉框 + 保存/删除/导入/导出四个按钮在个人项目中使用场景极少。配置管理由"预设方案"下拉框完全覆盖。
+
+**改动方案：**
+
+**删除的 UI 元素（config_panel.py）：**
+- `_scheme_combo` 下拉框 + `_btn_save/delete/import/export_scheme` 四个按钮（行 172-191）
+- 对应信号连接（行 341-345）
+- 6 个方法：`refresh_schemes`、`_on_scheme_selected`、`_save_current_scheme`、`_delete_selected_scheme`、`_import_scheme`、`_export_scheme`（行 656-787）
+- `_SCHEMES_DIR` 常量（行 96）、`_scheme_mgr` 初始化（行 114）、`import SchemeManager`（行 45）
+- `refresh_schemes()` 调用（行 622）
+
+**删除的桥接代码（main_window.py）：**
+- `refresh_schemes()` 委托方法（行 343-345）
+
+**删除的测试：**
+- `tests/test_gui/test_config_panel_schemes.py`（~60 行）
+
+**保留不动：**
+- "预设方案"下拉框 + 恢复默认按钮 + 漂移检测
+- `src/scheme_manager.py`（保留，未来可能复用）
+- `tests/test_scheme_manager.py`（保留，SchemeManager 本身逻辑仍正确）
+
+**净减 ~215 行，零风险纯删除。**
+
+---
+
+### v2.0 配套债务（从 v2.0+ 区块移入）
+
+| # | 债务 | 来源 | 说明 |
+|---|------|------|------|
+| D7 | 无断点续传机制 | 4-1 review | **已并入 D61b** — per-stage 检查点即断点续传 |
+| D6 | stage_failed 与 pipeline_finished 信号顺序无文档 | 4-1 review | 需在 v2.0 重构管线时一并规范 |
+
+---
+
+## v3.0
+
+差异化功能，需在 v2.0 之后启动。用户已确认 D62/D63 归入此版本 (2026-06-13)。
+
+### D62 — 单句编辑重合成
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | PRD v3.0 路线图 |
+| 复杂度 | 中 |
+| 依赖 | 无 |
+
+**需求：** 用户可以在翻译完成后查看字幕面板，选中某一句修改译文，然后单独重新合成该句的音频和视频。无需重新跑整个管线。
+
+**待设计项：**
+- 字幕面板需支持：点击选中、编辑译文、触发"重合成此句"
+- 重合成只跑 TTS + 语速自适应 + 局部合成（替换该段的音频和字幕）
+- 需要保留中间产物（TTS 音频、对齐后音频）供重合成使用
+
+**代码影响清单（预估）：**
+
+| 文件 | 改动 | 复杂度 |
+|------|------|--------|
+| `src/gui/transcript_panel.py` | 可编辑模式 + "重合成"按钮 | 中 |
+| `src/pipeline.py` | 新增 `resynthesize_segment()` 方法 | 中 |
+| `src/composer/` | 局部音视频替换（而非全量合成） | 中 |
+| 临时文件管理 | 重合成时保留中间产物 | 低 |
+
+---
+
+### D63 — 多说话人识别（WhisperX）
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | PRD v3.0 路线图 |
+| 复杂度 | 中-高 |
+| 依赖 | 无（与 D60 声音克隆协同：每说话人独立克隆） |
+
+**需求：** 视频中有多位说话人时，区分不同说话人并为每人分配不同音色（TTS voice）或独立克隆声音。
+
+**待设计项：**
+- 说话人分离（Speaker Diarization）：WhisperX 或 pyannote.audio
+- 与 ASR 集成：在识别文本的同时标注说话人 ID
+- 与 TTS 协同：每个 speaker_id 映射到不同 voice 或不同 reference_audio
+- UI 展示：字幕面板按说话人分色显示
+
+**代码影响清单（预估）：**
+
+| 文件 | 改动 | 复杂度 |
+|------|------|--------|
+| 新增 `src/asr/diarizer.py` | 说话人分离模块 | 高 |
+| `src/models.py` | SubtitleSegment 新增 `speaker_id` 字段 | 低 |
+| `src/tts/` | 按 speaker_id 选择不同 voice/reference | 中 |
+| `src/gui/transcript_panel.py` | 按说话人分色显示 | 中 |
+| `pyproject.toml` | 新增 `whisperx` 或 `pyannote.audio` 依赖 | 低 |
+
+---
+
+### 其他 v3.0+ 债务
 
 ### TTS 本地方案
 

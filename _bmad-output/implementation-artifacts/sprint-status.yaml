@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-05-13"
-last_updated: "2026-05-23" # updated: v1.1 语速自适应改进 D48-D50
+last_updated: "2026-05-31" # updated: v1.2-4-1 D58 完成
 project: "video_translator"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -82,8 +82,10 @@ development_status:
   5-2-api-retry-and-temp-file-cleanup: done
   epic-5-retrospective: done
 
+  # ─────────────────────────────────────────────
   # v1.1: 质量提升与 UX 修补（FR44~FR58）
   # 详见 _bmad-output/planning-artifacts/prd-v1.1.md
+  # ─────────────────────────────────────────────
 
   # Epic 1-v1.1: ASR 质量提升 (FR50, FR51)
   epic-1-v1.1: done
@@ -112,3 +114,31 @@ development_status:
   epic-5-v1.1: done
   5.1-1-close-event-safe-abort: done
   5.1-2-memory-threshold-unification: done
+
+  # ─────────────────────────────────────────────
+  # v1.2: 界面精简 + 跨平台 + TTS 扩展（6 项）
+  # 评审日期: 2026-05-30
+  # 详见 _bmad-output/implementation-artifacts/deferred-work.md
+  # ─────────────────────────────────────────────
+
+  # Epic 1-v1.2: 界面精简
+  # 删除语速滑块，消除三层自动化后已无用的手动控件
+  epic-1-v1.2: done
+  v1.2-1-1-d55-remove-speed-slider: done
+
+  # Epic 2-v1.2: 管线体验提升
+  # 音频提取实时进度 + ASR/翻译结果一键复制
+  epic-2-v1.2: done
+  v1.2-2-1-d2-audio-extract-progress: done
+  v1.2-2-2-d56-copy-asr-translation-results: done
+
+  # Epic 3-v1.2: 跨平台基础（D20 → D57 依赖链）
+  # FasterWhisperEngine + Windows 平台适配
+  epic-3-v1.2: done
+  v1.2-3-1-d20-faster-whisper-engine: done
+  v1.2-3-2-d57-windows-cross-platform: done
+
+  # Epic 4-v1.2: TTS 引擎扩展
+  # ChatTTS 本地引擎，CosyVoice→ChatTTS→Edge-TTS 降级链
+  epic-4-v1.2: done
+  v1.2-4-1-d58-chattts-engine: done

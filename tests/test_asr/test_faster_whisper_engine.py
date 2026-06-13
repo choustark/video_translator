@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asr._helpers import _build_initial_prompt
 from src.asr.faster_whisper_engine import FasterWhisperEngine
 from src.config import ASRConfig
 from src.exceptions import PipelineError
@@ -148,25 +147,6 @@ class TestTranscribe:
         call_kwargs = model.transcribe.call_args
         prompt = call_kwargs.kwargs.get("initial_prompt", call_kwargs[1].get("initial_prompt", ""))
         assert "MyCustomTool" in prompt
-
-    def test_excludes_default_proper_nouns_when_disabled(self) -> None:
-        config = _make_config(proper_nouns=["MyCustomTool"], use_default_proper_nouns=False)
-        engine = FasterWhisperEngine(config)
-        model = _mock_model(segments=[])
-
-        with (
-            patch("src.asr._helpers.psutil") as mock_psutil,
-            patch("src.asr.faster_whisper_engine.gc"),
-            patch.dict(sys.modules, {"faster_whisper": _mock_faster_whisper_module(model)}),
-        ):
-            mock_psutil.virtual_memory.return_value = MagicMock(
-                available=_ASRL_MEMORY_REQUIREMENT_GB * 1024**3 + 1,
-            )
-            engine.transcribe("/tmp/audio.wav")
-
-        call_kwargs = model.transcribe.call_args
-        prompt = call_kwargs.kwargs.get("initial_prompt", call_kwargs[1].get("initial_prompt", ""))
-        assert prompt == _build_initial_prompt(["MyCustomTool"])
 
 
 class TestMemoryCheck:

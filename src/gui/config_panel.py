@@ -5,7 +5,6 @@ from typing import Literal, cast
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -218,14 +217,6 @@ class ConfigPanel(QWidget):
         asr_path_btn.clicked.connect(lambda: self._browse_directory(self._asr_path_input))
         asr_form.addRow(self._field_label("模型路径"), asr_path_row)
 
-        self._use_default_nouns_cb = QCheckBox("使用默认技术词汇")
-        self._use_default_nouns_cb.setChecked(True)
-        self._use_default_nouns_cb.setToolTip(
-            "默认词汇：Claude Code、GPT-4、PySide6、ffmpeg、OpenAI 等\n"
-            "取消勾选后仅使用下方自定义词汇"
-        )
-        asr_form.addRow("", self._use_default_nouns_cb)
-
         self._proper_nouns_input = QTextEdit()
         self._proper_nouns_input.setPlaceholderText(
             "输入专有名词，逗号或换行分隔...\n例如：人名、地名、专业术语"
@@ -341,7 +332,6 @@ class ConfigPanel(QWidget):
         self._btn_restore_preset.clicked.connect(self._restore_preset)
         self._asr_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._asr_path_input.textChanged.connect(self._on_config_changed)
-        self._use_default_nouns_cb.stateChanged.connect(self._on_config_changed)
         self._proper_nouns_input.textChanged.connect(self._on_config_changed)
         self._translation_combo.currentIndexChanged.connect(self._on_config_changed)
         self._api_key_input.textChanged.connect(self._on_config_changed)
@@ -372,7 +362,6 @@ class ConfigPanel(QWidget):
         self._preset_combo.blockSignals(True)
         self._asr_engine_combo.blockSignals(True)
         self._asr_path_input.blockSignals(True)
-        self._use_default_nouns_cb.blockSignals(True)
         self._proper_nouns_input.blockSignals(True)
         self._translation_combo.blockSignals(True)
         self._api_key_input.blockSignals(True)
@@ -389,7 +378,6 @@ class ConfigPanel(QWidget):
             self._asr_engine_combo.setCurrentIndex(asr_engine_idx)
 
         self._asr_path_input.setText(config.asr.model_path)
-        self._use_default_nouns_cb.setChecked(config.asr.use_default_proper_nouns)
         self._proper_nouns_input.setPlainText(", ".join(config.asr.proper_nouns))
 
         trans_idx = self._translation_combo.findData(config.translation.engine)
@@ -411,7 +399,6 @@ class ConfigPanel(QWidget):
         self._preset_combo.blockSignals(False)
         self._asr_engine_combo.blockSignals(False)
         self._asr_path_input.blockSignals(False)
-        self._use_default_nouns_cb.blockSignals(False)
         self._proper_nouns_input.blockSignals(False)
         self._translation_combo.blockSignals(False)
         self._api_key_input.blockSignals(False)
@@ -517,7 +504,6 @@ class ConfigPanel(QWidget):
                     model_path=self._asr_path_input.text(),
                     language="en",
                     proper_nouns=proper_nouns,
-                    use_default_proper_nouns=self._use_default_nouns_cb.isChecked(),
                 ),
                 translation=TranslationConfig(
                     engine=trans_key,

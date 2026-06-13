@@ -37,10 +37,7 @@ class FasterWhisperEngine(ASREngine):
                 suggestion="请运行 uv add faster-whisper",
             ) from e
 
-        all_nouns = _build_proper_nouns_list(
-            user_nouns=self.config.proper_nouns,
-            use_default=self.config.use_default_proper_nouns,
-        )
+        all_nouns = _build_proper_nouns_list(user_nouns=self.config.proper_nouns)
         initial_prompt = _build_initial_prompt(all_nouns)
 
         logger.info("ASR | 开始 | audio=%s, model=%s, device=cpu, compute_type=int8", audio_path, self.config.model_path)

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.asr._helpers import (
-    _DEFAULT_PROPER_NOUNS,
     _apply_proper_noun_replacements,
     _build_initial_prompt,
     _build_proper_nouns_list,
@@ -43,17 +42,10 @@ class TestProperNounsList:
     def test_deduplicates_user_nouns_case_insensitively(self) -> None:
         nouns = _build_proper_nouns_list(
             ["OpenAI", "openai", "MyCustomTool", "MyCustomTool"],
-            use_default=True,
         )
 
         assert nouns.count("OpenAI") == 1
         assert nouns.count("MyCustomTool") == 1
-
-    def test_can_disable_default_proper_nouns(self) -> None:
-        nouns = _build_proper_nouns_list(["MyCustomTool"], use_default=False)
-
-        assert nouns == ["MyCustomTool"]
-        assert "OpenAI" not in nouns
 
 
 class TestTranscribe:
@@ -120,7 +112,7 @@ class TestTranscribe:
             )
             engine.transcribe("/tmp/audio.wav")
 
-        expected_prompt = _build_initial_prompt(_DEFAULT_PROPER_NOUNS)
+        expected_prompt = _build_initial_prompt([])
         mock_mlx.transcribe.assert_called_once_with(
             "/tmp/audio.wav",
             path_or_hf_repo=config.model_path,

@@ -44,7 +44,6 @@ class ASRConfig(BaseModel):
     model_path: str
     language: str = "en"
     proper_nouns: list[str] = Field(default_factory=list)
-    use_default_proper_nouns: bool = True
 
 
 class TranslationConfig(BaseModel):

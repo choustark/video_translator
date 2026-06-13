@@ -10,36 +10,14 @@ import psutil
 from src.exceptions import PipelineError
 from src.models import SubtitleSegment
 
-_DEFAULT_PROPER_NOUNS: list[str] = [
-    "Claude Code",
-    "GPT-4",
-    "PySide6",
-    "ffmpeg",
-    "OpenAI",
-    "DeepSeek",
-    "Homebrew",
-    "Apple Silicon",
-    "Metal",
-    "MPS",
-    "MLX",
-    "Whisper",
-    "CosyVoice",
-    "macOS",
-]
-
-
-def _build_proper_nouns_list(
-    user_nouns: list[str],
-    use_default: bool = True,
-) -> list[str]:
-    """根据用户配置构建最终的专有名词列表。
+def _build_proper_nouns_list(user_nouns: list[str]) -> list[str]:
+    """根据用户配置构建专有名词列表，去重。
 
     Args:
         user_nouns: 用户在配置中指定的专有名词列表。
-        use_default: 是否包含默认技术词汇列表。
 
     Returns:
-        合并后的专有名词列表，去重，保持用户词汇优先顺序。
+        去重后的专有名词列表，保持输入顺序。
     """
     result: list[str] = []
     seen: set[str] = set()
@@ -50,14 +28,6 @@ def _build_proper_nouns_list(
             continue
         result.append(noun)
         seen.add(key)
-
-    if use_default:
-        for noun in _DEFAULT_PROPER_NOUNS:
-            key = noun.strip().casefold()
-            if key in seen:
-                continue
-            result.append(noun)
-            seen.add(key)
 
     return result
 

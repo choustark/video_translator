@@ -3,7 +3,6 @@
   "model_path": "/Users/chou/work_space/video_translator/models/asr/whisper-medium-mlx/"
   "language": "en"
   "proper_nouns": []
-  "use_default_proper_nouns": true
 "translation":
   "engine": "glm"
   "model": "glm-4-flash"

@@ -275,9 +275,13 @@ def validate_video_duration(video_path: Path) -> None:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(video_path),
             ],
             capture_output=True,
@@ -305,6 +309,13 @@ def validate_video_duration(video_path: Path) -> None:
             f"无法解析视频时长: {result.stdout.strip()!r}",
             stage="video",
             suggestion="请确认视频文件有效且未损坏",
+        )
+
+    if duration <= 0:
+        raise ValidationError(
+            f"视频时长异常（{duration:.1f}s），文件可能已损坏",
+            stage="video",
+            suggestion="请检查视频文件是否完整，或尝试用 ffmpeg 重新封装",
         )
 
     if duration > MAX_VIDEO_DURATION_SECONDS:
@@ -423,9 +434,7 @@ def validate_config_only(config: AppConfig) -> ValidationResult:
     return ValidationResult(errors)
 
 
-def validate_all(
-    config: AppConfig, video_path: Path, output_dir: Path
-) -> ValidationResult:
+def validate_all(config: AppConfig, video_path: Path, output_dir: Path) -> ValidationResult:
     errors: list[ValidationError] = []
 
     checks: list[tuple[str, tuple[object, ...]]] = [

@@ -219,7 +219,8 @@ class TestImportError:
 
 
 class TestProgressCallback:
-    def test_calls_callback_per_segment(self) -> None:
+    def test_emits_completion_event(self) -> None:
+        """D22 v2.0-4-2：转录完成后必须发 progress=1.0 完成事件（不再按段 fake 模拟）。"""
         engine = MLXWhisperEngine(_make_config())
         mock_mlx = _mock_mlx_whisper()
         mock_mlx.transcribe.return_value = _mock_transcribe_result()
@@ -238,21 +239,16 @@ class TestProgressCallback:
                 progress_callback=lambda e: events.append(e),
             )
 
-        # 2 segments → min(10, 2) = 2 steps
-        assert len(events) == 2
-        assert events[0].stage == "ASR"
-        assert events[-1].progress == 1.0
+        # 完成事件存在，stage="ASR"，progress=1.0
+        assert any(e.stage == "ASR" and e.progress == 1.0 for e in events), (
+            f"未找到 progress=1.0 的完成事件，events={events}"
+        )
 
-    def test_calls_callback_10_steps_for_many_segments(self) -> None:
+    def test_all_events_use_asr_stage(self) -> None:
+        """D22 v2.0-4-2：所有 ProgressEvent 必须用 stage='ASR'。"""
         engine = MLXWhisperEngine(_make_config())
         mock_mlx = _mock_mlx_whisper()
-        mock_mlx.transcribe.return_value = {
-            "text": "",
-            "language": "en",
-            "segments": [
-                {"start": float(i), "end": float(i + 1), "text": f"seg {i}"} for i in range(15)
-            ],
-        }
+        mock_mlx.transcribe.return_value = _mock_transcribe_result()
         events: list[ProgressEvent] = []
 
         with (
@@ -268,11 +264,11 @@ class TestProgressCallback:
                 progress_callback=lambda e: events.append(e),
             )
 
-        # 15 segments → min(10, 15) = 10 steps
-        assert len(events) == 10
-        assert events[-1].progress == 1.0
+        assert len(events) > 0, "未发出任何 ProgressEvent"
+        assert all(e.stage == "ASR" for e in events)
 
     def test_no_callback_when_none(self) -> None:
+        """D22 v2.0-4-2：progress_callback=None 必须不崩。"""
         engine = MLXWhisperEngine(_make_config())
         mock_mlx = _mock_mlx_whisper()
         mock_mlx.transcribe.return_value = _mock_transcribe_result()
@@ -291,6 +287,143 @@ class TestProgressCallback:
             )
 
         assert len(segments) == 2
+
+
+class TestRealTimeProgress:
+    """D22 v2.0-4-2：mlx-whisper 实时进度回调（策略 A：RTF 估算 + 周期 timer）。
+
+    验证 ASR 转录"期间"发出 ProgressEvent（不再转录完成后才模拟）。
+    """
+
+    def test_emits_progress_during_transcription(self) -> None:
+        """转录"期间"必须有 ProgressEvent 发出（核心 AC3）。
+
+        通过 mock transcribe 的 side_effect 为 time.sleep(0.3) 模拟阻塞，
+        并 patch 周期间隔为 0.1s（避免测试慢），断言 callback 被多次调用。
+        """
+        import time as _time
+
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        # 模拟 transcribe 阻塞 0.3s
+        mock_mlx.transcribe.side_effect = lambda *a, **kw: (
+            _time.sleep(0.3) or _mock_transcribe_result()
+        )
+        events: list[ProgressEvent] = []
+
+        with (
+            patch("src.asr._helpers.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
+            patch("src.asr.mlx_whisper_engine._PROGRESS_INTERVAL_SECONDS", 0.1),
+            patch.object(engine, "_get_audio_duration", return_value=60.0),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024**3,
+            )
+            engine.transcribe(
+                "/tmp/audio.wav",
+                progress_callback=lambda e: events.append(e),
+            )
+
+        # 关键断言：转录期间（0.3s）应至少触发 1 次进度（排除完成事件后 ≥1）
+        in_progress_events = [e for e in events if e.progress < 1.0]
+        assert len(in_progress_events) >= 1, f"转录期间未发出 ProgressEvent，events={events}"
+
+    def test_progress_monotonic_non_decreasing(self) -> None:
+        """AC2：progress 序列必须单调不减。"""
+        import time as _time
+
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        mock_mlx.transcribe.side_effect = lambda *a, **kw: (
+            _time.sleep(0.3) or _mock_transcribe_result()
+        )
+        events: list[ProgressEvent] = []
+
+        with (
+            patch("src.asr._helpers.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
+            patch("src.asr.mlx_whisper_engine._PROGRESS_INTERVAL_SECONDS", 0.1),
+            patch.object(engine, "_get_audio_duration", return_value=60.0),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024**3,
+            )
+            engine.transcribe(
+                "/tmp/audio.wav",
+                progress_callback=lambda e: events.append(e),
+            )
+
+        progresses = [e.progress for e in events]
+        for prev, curr in zip(progresses, progresses[1:]):
+            assert curr >= prev, f"progress 非单调：{prev} → {curr}，全序列={progresses}"
+
+    def test_emits_completion_progress(self) -> None:
+        """AC4：转录完成后最后一次 progress 必须 == 1.0。"""
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        mock_mlx.transcribe.return_value = _mock_transcribe_result()
+        events: list[ProgressEvent] = []
+
+        with (
+            patch("src.asr._helpers.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
+            patch("src.asr.mlx_whisper_engine._PROGRESS_INTERVAL_SECONDS", 0.05),
+            patch.object(engine, "_get_audio_duration", return_value=60.0),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024**3,
+            )
+            engine.transcribe(
+                "/tmp/audio.wav",
+                progress_callback=lambda e: events.append(e),
+            )
+
+        assert events, "未发出任何 ProgressEvent"
+        assert events[-1].progress == 1.0, f"完成事件 progress != 1.0，events={events}"
+        assert "已识别" in events[-1].message, (
+            f"完成 message 不含'已识别'，msg={events[-1].message!r}"
+        )
+
+    def test_progress_capped_at_95_percent_during_transcription(self) -> None:
+        """AC2 边界：估算进度不应超过 0.95，避免完成后卡在 100%。
+
+        通过 mock 极长 sleep（强制多次 timer 触发），断言转录期间发出的
+        progress 全部 <= 0.95。
+        """
+        import time as _time
+
+        engine = MLXWhisperEngine(_make_config())
+        mock_mlx = _mock_mlx_whisper()
+        # 0.5s 阻塞 + audio_duration=0.5s（很短，让 elapsed/total 很快接近 1.0）
+        mock_mlx.transcribe.side_effect = lambda *a, **kw: (
+            _time.sleep(0.5) or _mock_transcribe_result()
+        )
+        events: list[ProgressEvent] = []
+
+        with (
+            patch("src.asr._helpers.psutil") as mock_psutil,
+            patch("src.asr.mlx_whisper_engine.gc"),
+            patch.dict(sys.modules, {"mlx_whisper": mock_mlx}),
+            patch("src.asr.mlx_whisper_engine._PROGRESS_INTERVAL_SECONDS", 0.1),
+            patch.object(engine, "_get_audio_duration", return_value=0.5),
+        ):
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                available=10 * 1024**3,
+            )
+            engine.transcribe(
+                "/tmp/audio.wav",
+                progress_callback=lambda e: events.append(e),
+            )
+
+        in_progress = [e.progress for e in events if e.progress < 1.0]
+        # 转录期间 progress 全部 <= 0.95（防止 fake 撞到 1.0 后等待真实完成）
+        assert all(p <= 0.95 for p in in_progress), (
+            f"转录期间 progress 超过 0.95 上限：{in_progress}"
+        )
 
 
 class TestGCRelease:

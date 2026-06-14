@@ -191,8 +191,11 @@ class TestValidateTranslationApi:
 
     def test_fails_for_401_response(self) -> None:
         err = urllib.error.HTTPError(
-            url="https://example.com", code=401, msg="Unauthorized",
-            hdrs={}, fp=None,  # type: ignore[arg-type]
+            url="https://example.com",
+            code=401,
+            msg="Unauthorized",
+            hdrs={},
+            fp=None,  # type: ignore[arg-type]
         )
         with (
             patch("src.validators.urllib.request.urlopen", side_effect=err),
@@ -204,8 +207,11 @@ class TestValidateTranslationApi:
 
     def test_fails_for_403_response(self) -> None:
         err = urllib.error.HTTPError(
-            url="https://example.com", code=403, msg="Forbidden",
-            hdrs={}, fp=None,  # type: ignore[arg-type]
+            url="https://example.com",
+            code=403,
+            msg="Forbidden",
+            hdrs={},
+            fp=None,  # type: ignore[arg-type]
         )
         with (
             patch("src.validators.urllib.request.urlopen", side_effect=err),
@@ -230,8 +236,11 @@ class TestValidateTranslationApi:
 
     def test_skips_on_500_server_error(self) -> None:
         err = urllib.error.HTTPError(
-            url="https://example.com", code=500, msg="Internal Server Error",
-            hdrs={}, fp=None,  # type: ignore[arg-type]
+            url="https://example.com",
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=None,  # type: ignore[arg-type]
         )
         with patch("src.validators.urllib.request.urlopen", side_effect=err):
             validate_translation_api("glm", "some-key")
@@ -369,6 +378,32 @@ class TestValidateVideoDuration:
         ):
             validate_video_duration(Path("video.mp4"))
         assert "无法解析" in str(exc_info.value)
+
+    def test_fails_for_zero_duration(self) -> None:
+        """零时长视频（duration=0.0）通常已损坏，应被校验拦截。"""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "0.0\n"
+        with (
+            patch("src.validators.subprocess.run", return_value=mock_result),
+            pytest.raises(ValidationError) as exc_info,
+        ):
+            validate_video_duration(Path("video.mp4"))
+        assert exc_info.value.stage == "video"
+        assert "损坏" in str(exc_info.value)
+
+    def test_fails_for_negative_duration(self) -> None:
+        """负数时长属异常容器输出，与零时长共用同一拦截分支。"""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "-1.0\n"
+        with (
+            patch("src.validators.subprocess.run", return_value=mock_result),
+            pytest.raises(ValidationError) as exc_info,
+        ):
+            validate_video_duration(Path("video.mp4"))
+        assert exc_info.value.stage == "video"
+        assert "损坏" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

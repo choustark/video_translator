@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-13"
-last_updated: "2026-06-14 (Epic 2-v2.0 回顾完成，3 个 story 全部 done，进入 v2.0 后半程)"
+last_updated: "2026-06-14 (Epic 4-v2.0 retrospective 完成 → done，v2.0 完成度 90%)"
 project: "video_translator"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -179,8 +179,8 @@ development_status:
 
   # Epic 4-v2.0: 质量修补
   # 零时长校验 + ASR 进度实时 + 信号文档
-  epic-4-v2.0: backlog
-  v2.0-4-1-d29-zero-duration-validation: backlog
-  v2.0-4-2-d22-asr-progress-realtime: backlog
-  v2.0-4-3-d6-signal-order-documentation: backlog
-  epic-4-v2.0-retrospective: optional
+  epic-4-v2.0: done
+  v2.0-4-1-d29-zero-duration-validation: done
+  v2.0-4-2-d22-asr-progress-realtime: done
+  v2.0-4-3-d6-signal-order-documentation: done
+  epic-4-v2.0-retrospective: done

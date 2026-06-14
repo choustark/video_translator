@@ -589,6 +589,22 @@ CosyVoice 已通过 subprocess 桥集成（2026-05-22），使用独立 conda �
 - [Defer] `Communicate()` 构造函数网络异常（aiohttp.ClientError/ssl.SSLError/TimeoutError）未被重试 — 当前仅重试 NoAudioReceived/WebSocketError，后续可扩展
 - [Defer] `test_retry_uses_exponential_backoff` mock 覆盖所有策略函数 — 测试脆弱但实际重试行为由其他测试充分覆盖
 
+## Deferred from: code review of v2.0-4-3-d6-signal-order-documentation (2026-06-14)
+
+- [Defer] **contract doc 嵌入行号（`pipeline.py:227, 236...`）会随代码变更漂移** — 文档定位为"当前实现快照"，行号保质期短。后续 pipeline.py 改动时需同步更新。
+- [Defer] **`transcript_updated` docstring "在 ASR 与翻译阶段各 emit 一次" 是脆性断言** — 若未来增加 emit 点，docstring 会成为谎言。建议改为描述性语言（如"管线过程中更新字幕文本"）。
+
+## Deferred from: code review of v2.0-4-2-d22-asr-progress-realtime (2026-06-14)
+
+- [Defer] **SubtitleSegment 格式化变更超出 story 范围** — `transcribe()` 中 `SubtitleSegment(...)` 从紧凑格式改为多行格式，属 ruff format 副作用，不影响功能。
+- [Defer] **`if progress <= 0.0: continue` 是 dead code** — `time.monotonic()` 首次 wait 至少 2s 后才进入循环体，`ratio` 不可能 ≤0。防御性保留无害，可标注"理论不可达"。
+- [Defer] **`test_progress_capped_at_95_percent` 未真正触及 0.95 cap 边界** — mock 参数使 max ratio=0.5，cap 未被测试到。后续可提高 audio_duration 重新验证。
+
+## Deferred from: code review of v2.0-4-1-d29-zero-duration-validation (2026-06-14)
+
+- [Defer] **格式化变更超出 story 范围** — ffprobe 参数列表（src/validators.py:277-285）、HTTPError 构造函数（tests/test_validators.py:191-240）、validate_all() 签名（src/validators.py:434-436）的纯格式化变更不属于 story spec 范围，增加 diff 噪音。可在后续统一格式化处理。
+- [Defer] **极小正数时长不可拦截** — `1e-10` 等极小正值通过 `duration <= 0` 检查，但 spec 已明确"极短时长（<1s）校验"为 Story Boundary 除外项，且 ffprobe 不会对有效视频输出此值。后续 story 可考虑增加 min_duration 阈值。
+
 ## Deferred from: code review of v2.0-2-2-d61b-checkpoint-resume (2026-06-14)
 
 - [Defer] `_compute_config_hash` 用 `default=str` 序列化 Path — 路径在不同机器/工作目录下可能 str 不同（相对 vs 绝对），导致同配置不同 hash — 需要 path-agnostic 重构

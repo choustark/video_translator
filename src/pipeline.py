@@ -52,8 +52,12 @@ class Pipeline:
     def _run_in_thread(self, video_path: Path, output_dir: Path, resume: bool = False) -> None:
         try:
             self.process(video_path, output_dir, resume)
-        except Exception:
+        except Exception as e:
+            # D6-DEV-1 修复：process() 理论上内部双 except 已覆盖所有异常，
+            # 此兜底用于防御性编程。遵守契约不变量 2：stage_failed 必须先于 pipeline_finished，
+            # 复用 _fail_stage（_current_stage 在 __init__ 已初始化为 STAGE_NAMES[0]，必为合法值）。
             logger.exception("管线 | 未捕获异常")
+            self._fail_stage(self._current_stage, str(e))
             self.signals.pipeline_finished.emit()
 
     def abort(self) -> None:

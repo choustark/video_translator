@@ -284,6 +284,59 @@ class TestValidateTtsModel:
 
 
 # ---------------------------------------------------------------------------
+# validate_tts_reference_audio（D60 声音克隆）
+# ---------------------------------------------------------------------------
+
+
+class TestValidateTtsReferenceAudio:
+    """validate_tts_reference_audio 测试：D60 参考音频校验。"""
+
+    def test_skips_for_edge_tts(self, tmp_path: Path) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        # Edge-TTS 即便设置了 reference_audio 也应跳过
+        validate_tts_reference_audio("edge-tts", str(tmp_path / "ref.wav"))
+
+    def test_skips_when_reference_audio_empty(self) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        validate_tts_reference_audio("cosyvoice", "")
+
+    def test_passes_for_valid_wav(self, tmp_path: Path) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        ref = tmp_path / "voice.wav"
+        ref.write_bytes(b"fake")
+        validate_tts_reference_audio("cosyvoice", str(ref))
+
+    def test_passes_for_mp3_and_flac(self, tmp_path: Path) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        for suffix in (".mp3", ".flac"):
+            ref = tmp_path / f"voice{suffix}"
+            ref.write_bytes(b"fake")
+            validate_tts_reference_audio("cosyvoice", str(ref))
+
+    def test_fails_for_nonexistent_file(self, tmp_path: Path) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        with pytest.raises(ValidationError) as exc_info:
+            validate_tts_reference_audio("cosyvoice", str(tmp_path / "missing.wav"))
+        assert exc_info.value.stage == "tts"
+        assert "不存在" in str(exc_info.value)
+
+    def test_fails_for_unsupported_suffix(self, tmp_path: Path) -> None:
+        from src.validators import validate_tts_reference_audio
+
+        ref = tmp_path / "voice.ogg"
+        ref.write_bytes(b"fake")
+        with pytest.raises(ValidationError) as exc_info:
+            validate_tts_reference_audio("cosyvoice", str(ref))
+        assert exc_info.value.stage == "tts"
+        assert "不支持" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
 # validate_video_format
 # ---------------------------------------------------------------------------
 

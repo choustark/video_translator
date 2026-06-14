@@ -242,6 +242,46 @@ def validate_tts_model(engine: str, model_path: str) -> None:
             )
 
 
+# D60: 参考音频支持的后缀白名单
+_SUPPORTED_REFERENCE_AUDIO_SUFFIXES = {".wav", ".mp3", ".flac"}
+
+
+def validate_tts_reference_audio(engine: str, reference_audio: str) -> None:
+    """校验 D60 CosyVoice 声音克隆的参考音频文件。
+
+    规则：
+    - 非 cosyvoice 引擎或 reference_audio 为空：跳过
+    - 文件必须存在
+    - 后缀必须在白名单 {wav, mp3, flac}
+    - 不校验时长/采样率（CosyVoice 内部重采样，时长是推荐值不强制）
+
+    Args:
+        engine: TTS 引擎名称。
+        reference_audio: 参考音频路径字符串，空表示未启用克隆。
+
+    Raises:
+        ValidationError: 文件不存在或格式不支持。
+    """
+    if engine != "cosyvoice" or not reference_audio:
+        return
+
+    path = Path(reference_audio)
+    if not path.is_file():
+        raise ValidationError(
+            f"参考音频文件不存在: {reference_audio}",
+            stage="tts",
+            suggestion="请重新选择参考音频，或清空该字段以使用默认音色",
+        )
+    suffix = path.suffix.lower()
+    if suffix not in _SUPPORTED_REFERENCE_AUDIO_SUFFIXES:
+        supported = "/".join(sorted(_SUPPORTED_REFERENCE_AUDIO_SUFFIXES))
+        raise ValidationError(
+            f"参考音频格式不支持: {suffix}",
+            stage="tts",
+            suggestion=f"请使用以下格式之一: {supported}",
+        )
+
+
 def validate_video_format(video_path: Path) -> None:
     """校验视频文件格式是否支持。
 
@@ -421,6 +461,7 @@ def validate_config_only(config: AppConfig) -> ValidationResult:
         ("validate_asr_model", (config.asr.model_path,)),
         ("validate_translation_api", (config.translation.engine, config.translation.api_key)),
         ("validate_tts_model", (config.tts.engine, config.tts.model_path)),
+        ("validate_tts_reference_audio", (config.tts.engine, config.tts.reference_audio)),
         ("validate_memory", (config.memory.warning_gb,)),
     ]
 
@@ -442,6 +483,7 @@ def validate_all(config: AppConfig, video_path: Path, output_dir: Path) -> Valid
         ("validate_asr_model", (config.asr.model_path,)),
         ("validate_translation_api", (config.translation.engine, config.translation.api_key)),
         ("validate_tts_model", (config.tts.engine, config.tts.model_path)),
+        ("validate_tts_reference_audio", (config.tts.engine, config.tts.reference_audio)),
         ("validate_video_format", (video_path,)),
         ("validate_video_duration", (video_path,)),
         ("validate_disk_space", (video_path, output_dir)),

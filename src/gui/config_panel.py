@@ -249,6 +249,24 @@ class ConfigPanel(QWidget):
         tts_path_btn.clicked.connect(lambda: self._browse_directory(self._tts_path_input))
         tts_form.addRow(self._field_label("模型路径"), tts_path_row)
 
+        # D60 声音克隆：参考音频文件选择（仅 CosyVoice 引擎使用，其他引擎忽略该字段）
+        self._tts_reference_input = QLineEdit()
+        self._tts_reference_input.setReadOnly(True)
+        self._tts_reference_input.setPlaceholderText("可选：选择参考音频（.wav/.mp3，3-10s）...")
+        tts_ref_btn = QPushButton("浏览...")
+        tts_ref_btn.setObjectName("inlineButton")
+        tts_ref_clear_btn = QPushButton("清除")
+        tts_ref_clear_btn.setObjectName("inlineButton")
+        tts_ref_clear_btn.setFixedWidth(50)
+        tts_ref_row = QHBoxLayout()
+        tts_ref_row.setSpacing(SPACING_XS)
+        tts_ref_row.addWidget(self._tts_reference_input)
+        tts_ref_row.addWidget(tts_ref_btn)
+        tts_ref_row.addWidget(tts_ref_clear_btn)
+        tts_ref_btn.clicked.connect(self._browse_reference_audio)
+        tts_ref_clear_btn.clicked.connect(self._tts_reference_input.clear)
+        tts_form.addRow(self._field_label("参考音频"), tts_ref_row)
+
         self._subtitle_style_combo = QComboBox()
         for key, display in _SUBTITLE_STYLE_DISPLAY.items():
             self._subtitle_style_combo.addItem(display, key)
@@ -306,6 +324,7 @@ class ConfigPanel(QWidget):
         self._api_key_input.textChanged.connect(self._on_config_changed)
         self._tts_engine_combo.currentIndexChanged.connect(self._on_config_changed)
         self._tts_path_input.textChanged.connect(self._on_config_changed)
+        self._tts_reference_input.textChanged.connect(self._on_config_changed)
         self._subtitle_style_combo.currentIndexChanged.connect(self._on_config_changed)
 
     def _on_preset_changed(self, _index: int) -> None:
@@ -331,6 +350,7 @@ class ConfigPanel(QWidget):
         self._api_key_input.blockSignals(True)
         self._tts_engine_combo.blockSignals(True)
         self._tts_path_input.blockSignals(True)
+        self._tts_reference_input.blockSignals(True)
         self._subtitle_style_combo.blockSignals(True)
 
         preset_idx = self._preset_combo.findData(config.preset)
@@ -355,6 +375,7 @@ class ConfigPanel(QWidget):
             self._tts_engine_combo.setCurrentIndex(tts_engine_idx)
 
         self._tts_path_input.setText(config.tts.model_path)
+        self._tts_reference_input.setText(config.tts.reference_audio)
 
         style_idx = self._subtitle_style_combo.findData(config.subtitle.style)
         if style_idx >= 0:
@@ -368,6 +389,7 @@ class ConfigPanel(QWidget):
         self._api_key_input.blockSignals(False)
         self._tts_engine_combo.blockSignals(False)
         self._tts_path_input.blockSignals(False)
+        self._tts_reference_input.blockSignals(False)
         self._subtitle_style_combo.blockSignals(False)
 
     def _on_config_changed(self) -> None:
@@ -482,6 +504,7 @@ class ConfigPanel(QWidget):
                     speed=1.0,
                     conda_python_path=self._file_cosyvoice_field("conda_python_path"),
                     cosyvoice_source_path=self._file_cosyvoice_field("cosyvoice_source_path"),
+                    reference_audio=self._tts_reference_input.text(),
                 ),
                 subtitle=SubtitleConfig(style=subtitle_style),
             )
@@ -605,6 +628,21 @@ class ConfigPanel(QWidget):
         path = QFileDialog.getExistingDirectory(self, "选择模型目录", start_dir)
         if path:
             line_edit.setText(path)
+
+    def _browse_reference_audio(self) -> None:
+        """D60 声音克隆：选择参考音频文件（wav/mp3/flac）。"""
+        current = self._tts_reference_input.text()
+        start_dir = (
+            str(Path(current).parent) if current and Path(current).exists() else str(Path.home())
+        )
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择参考音频",
+            start_dir,
+            "音频文件 (*.wav *.mp3 *.flac);;所有文件 (*.*)",
+        )
+        if path:
+            self._tts_reference_input.setText(path)
 
     def _toggle_api_key_visibility(self) -> None:
         if self._api_key_input.echoMode() == QLineEdit.EchoMode.Password:

@@ -1,9 +1,9 @@
 # 管线信号契约（Pipeline Signals Contract）
 
 > 目标读者：项目维护者、回归代码的 Dev、调试 UI/pipeline 时序问题的工程师
-> 最后更新：2026-06-14
+> 最后更新：2026-06-14（v2.0-3-2 修复 D6-DEV-1）
 > 状态：当前实现快照（v2.0），不包含未来规划
-> 数据来源：代码快照 2026-06-14 / commit `d524bdd`
+> 数据来源：代码快照 2026-06-14 / commit `d524bdd` + v2.0-3-2 修复
 
 ---
 
@@ -134,30 +134,33 @@
 
 **关键契约：** abort 路径仍 emit `stage_failed`，只是 UI 端 `MainWindow` 通过 `_abort_requested.is_set()` 静默处理（不弹错误对话框），但 `PipelineProgress` 仍标记失败。这是**设计意图**——给用户视觉反馈"中止已生效"，但不显示烦人的错误弹窗。
 
-### 2.4 未捕获异常路径（**已知偏差**）
+### 2.4 未捕获异常路径（**已于 v2.0-3-2 修复**）
 
-**触发条件：** `process()` 在外层 try 块之外抛异常（极罕见，理论上 `process()` 内部 86-197 行的双 except 已覆盖所有 Exception）。可触发场景：`_create_temp_dir` 在 try 块之前抛 `OSError`（实际位于 try 块内，但理论上若有未覆盖路径），或 `process()` 调用前的代码异常。
+**触发条件：** `process()` 在外层 try 块之外抛异常（极罕见，理论上 `process()` 内部 86-197 行的双 except 已覆盖所有 Exception）。
 
-**emit 序列：**
+**emit 序列（v2.0-3-2 修复后）：**
 
 ```
-[_run_in_thread, pipeline.py:52-57]
+[_run_in_thread, pipeline.py:52-60]
   try:
       self.process(...)
-  except Exception:
+  except Exception as e:
       logger.exception("管线 | 未捕获异常")
-      self.signals.pipeline_finished.emit()  @ 57
-      ← 注意：未 emit stage_failed！
+      self._fail_stage(self._current_stage, str(e))  @ 58  ← emit stage_failed
+      self.signals.pipeline_finished.emit()           @ 59
 ```
 
-**⚠️ 已知偏差：**
+**修复前（v2.0-3-2 之前）的偏差：**
 
-此路径**只 emit `pipeline_finished`，不 emit `stage_failed`**。后果：
+修复前的 `_run_in_thread` except 块**只 emit `pipeline_finished`，不 emit `stage_failed`**，违反契约不变量 2（§三）。后果：
 - `MainWindow._on_pipeline_finished` 会恢复 UI（按钮、`_pipeline=None`）✓ 正常
 - `PipelineProgress._on_pipeline_finished` 因 `_has_failure=False`（始终未设置）会误显示"全部完成，总耗时 Xs" ✗ 不准确
-- 但实际上 `process()` 内部 try/except 设计上覆盖了所有 Exception 路径，此偏差在常规运行下**不可达**
 
-**修复建议（不在本契约文档范围内）：** 若需修复，应新开 story，在 `_run_in_thread` 的 except 块中先调 `_fail_stage("管线", str(e))` 再 emit `pipeline_finished`。本契约文档仅如实记录现状。
+**v2.0-3-2 修复方案（2026-06-14）：**
+
+在 `_run_in_thread` 的 except 块中复用 `_fail_stage` 方法（line 253-259），传入 `self._current_stage`（在 `__init__` 已初始化为 `STAGE_NAMES[0]`="音频提取"，必为合法值）与 `str(e)`，保证不变量 2 成立。
+
+**回归测试：** `tests/test_pipeline_uncaught_exception.py` 验证 emit 顺序。
 
 ---
 
@@ -175,7 +178,7 @@
 
 **理由：** `PipelineProgress._on_pipeline_finished`（`pipeline_progress.py:95-105`）通过 `_has_failure` 标志决定显示"全部完成"还是"管线执行失败"，而 `_has_failure` 由 `_on_stage_failed` 设置。若顺序颠倒，UI 误显示成功。
 
-**违反案例：** `_run_in_thread` 未捕获异常路径（§2.4）即违反此不变量。
+**违反案例（历史）：** `_run_in_thread` 未捕获异常路径曾违反此不变量（§2.4），已于 v2.0-3-2 修复。
 
 ### 不变量 3：同一阶段内 `stage_started` 只 emit 一次
 
@@ -242,13 +245,13 @@ if self._pipeline is not None and self._pipeline._abort_requested.is_set():
 
 ## 五、已知偏差与未来工作
 
-### 5.1 已知偏差（**当前不修复，仅记录**）
+### 5.1 已知偏差
 
-| ID | 描述 | 影响 | 来源 |
-|----|------|------|------|
-| D6-DEV-1 | `_run_in_thread` 未捕获异常路径缺 `stage_failed`（§2.4） | 极罕见；UI 可能误显示"全部完成" | 本契约文档首次记录 |
+> 截至 v2.0-3-2（2026-06-14），**无已知偏差**。原 D6-DEV-1（`_run_in_thread` 未捕获异常路径缺 `stage_failed`）已修复。
 
-**为何不修复：** 修复涉及 pipeline.py 代码改动，超出 D6 文档化 story 范围（参考 v2.0-1-3 执行纪律）。建议新开 story 处理。
+| ID | 描述 | 状态 | 修复 Story |
+|----|------|------|-----------|
+| ~~D6-DEV-1~~ | `_run_in_thread` 未捕获异常路径缺 `stage_failed`（§2.4） | ✅ 已修复 | v2.0-3-2（2026-06-14） |
 
 ### 5.2 未来工作（不在 v2.0 范围）
 

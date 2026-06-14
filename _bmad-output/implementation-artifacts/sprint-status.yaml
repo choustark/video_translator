@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-13"
-last_updated: "2026-06-14 (Epic 4-v2.0 retrospective 完成 → done，v2.0 完成度 90%)"
+last_updated: "2026-06-14 (v2.0-3-1 code review 完成 → done，v2.0 全线 11/11 完成 🎉)"
 project: "video_translator"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -171,10 +171,11 @@ development_status:
   v2.0-2-3-d23-edgetts-retry: done
   epic-2-v2.0-retrospective: done
 
-  # Epic 3-v2.0: 声音克隆
-  # CosyVoice cross_lingual 声音克隆
-  epic-3-v2.0: backlog
-  v2.0-3-1-d60-cosyvoice-voice-cloning: backlog
+  # Epic 3-v2.0: 声音克隆 + 契约偏差修复
+  # CosyVoice cross_lingual 声音克隆 + D6-DEV-1 未捕获异常路径补 stage_failed
+  epic-3-v2.0: done
+  v2.0-3-1-d60-cosyvoice-voice-cloning: done
+  v2.0-3-2-d6-dev-1-fix: done
   epic-3-v2.0-retrospective: optional
 
   # Epic 4-v2.0: 质量修补

@@ -10,6 +10,7 @@ License: Apache 2.0 License
 GitHub: https://github.com/FunAudioLLM/CosyVoice
 License: Apache 2.0 License
 """
+
 from __future__ import annotations
 
 import json
@@ -61,6 +62,7 @@ class CosyVoiceEngine(TTSEngine):
             "model_path": self.config.model_path,
             "speaker": speaker,
             "speed": self.config.speed,
+            "reference_audio": self.config.reference_audio,
             "segments": task_segments,
         }
 
@@ -106,9 +108,7 @@ class CosyVoiceEngine(TTSEngine):
                 pass
             if process_registry is not None and process in process_registry:
                 process_registry.remove(process)
-            raise ImportError(
-                "CosyVoice worker 超时（30秒），已强制终止"
-            )
+            raise ImportError("CosyVoice worker 超时（30秒），已强制终止")
 
         stderr_thread.join(timeout=5)
 

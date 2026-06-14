@@ -3,6 +3,11 @@
 > 最后更新: 2026-06-13 (Epic 1-v2.0 retro: 补登记 CI workflow 推迟 + scheme_manager DEPRECATED)
 > 分类标准：v1.2 必做 / v1.2 可选 / v2.0+ / 已过期可丢弃
 
+## Deferred from: code review of v2.0-3-1-d60-cosyvoice-voice-cloning (2026-06-14)
+
+- [Defer] **AC2 措辞与 Dev Notes §2 矛盾** — AC2 说 reference_audio 加载失败"不整体崩溃"，但 Dev Notes §2 要求走降级链。实现正确（`sys.exit(1)` → 降级），AC2 措辞需在未来 spec 修订中更正。
+- [Defer] **`_browse_reference_audio` 默认从 `Path.home()` 打开** — 首次使用时对话框从根目录打开，可能较慢。与既有 `_browse_directory` 模式一致，非新引入。
+
 ## Deferred from: Epic 1-v2.0 retro (2026-06-13)
 
 - [Defer] **CI workflow `.github/workflows/{test,code-quality,nightly}.yml` 推迟到 v2.0 全部完成后处理** — Story v2.0-1-2 范围扩展引入，但未经真实 Windows runner 验证；Mr.ChouCj 决策（2026-06-13 retro）：v2.0 主线不依赖未验证 CI，待 Epic 2-4 全部完成后再启用跨平台 CI。文件已存在于 working tree，可在 v2.0 完成后直接 commit

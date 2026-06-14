@@ -85,6 +85,8 @@ class TTSConfig(BaseModel):
     speed: float = Field(1.0, ge=0.5, le=2.0)
     conda_python_path: str = ""
     cosyvoice_source_path: str = ""
+    # D60 声音克隆：参考音频绝对路径，空字符串表示不启用克隆（走默认 SFT 路径）
+    reference_audio: str = ""
 
 
 class SubtitleConfig(BaseModel):

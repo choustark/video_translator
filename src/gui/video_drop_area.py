@@ -1,13 +1,25 @@
+import hashlib
+import json
 import logging
 import math
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from src.config import MAX_VIDEO_DURATION_SECONDS, OUTPUT_DIR, AppConfig, format_duration_limit
 from src.gui.constants import (
     COLOR_ACCENT,
     COLOR_BORDER,
@@ -20,13 +32,15 @@ from src.gui.constants import (
     DROP_AREA_MIN_HEIGHT,
     RADIUS_XL,
 )
+from src.pipeline import STAGE_NAMES
 
 logger = logging.getLogger("video_translator")
 
+# 阶段总数：与 pipeline.STAGE_NAMES 长度同步，避免硬编码魔法数
+_TOTAL_STAGES = len(STAGE_NAMES)
+
 # 支持的视频格式后缀
 SUPPORTED_FORMATS = {".mp4", ".mkv", ".mov", ".avi"}
-# 视频时长上限（秒），限制 30 分钟
-MAX_DURATION_SECONDS = 1800
 
 
 class VideoDropArea(QFrame):
@@ -48,9 +62,20 @@ class VideoDropArea(QFrame):
         super().__init__(parent)
         self._video_path: Path | None = None
         self._video_info: dict | None = None
+        self.resume_requested: bool = False
+        self.checkpoint_data: dict | None = None
+        self._config_provider: Callable[[], AppConfig | None] | None = None
 
         self._setup_ui()
         self._set_idle_state()
+
+    def set_config_provider(self, provider: Callable[[], AppConfig | None]) -> None:
+        """注入配置获取回调。
+
+        `_check_for_resume` 调用此回调获取当前 AppConfig 实例，
+        用于计算 config_hash 与检查点中保存的 hash 比对（异常流程 B 校验）。
+        """
+        self._config_provider = provider
 
     @property
     def video_path(self) -> Path | None:
@@ -281,11 +306,15 @@ class VideoDropArea(QFrame):
             logger.error("ffprobe 调用失败: %s", e)
             return
 
-        if duration_seconds > MAX_DURATION_SECONDS:
+        if duration_seconds > MAX_VIDEO_DURATION_SECONDS:
             minutes = duration_seconds / 60
-            self._set_error_state(f"视频时长超过 30 分钟限制（{minutes:.1f} 分钟）")
+            limit_display = format_duration_limit(MAX_VIDEO_DURATION_SECONDS)
+            self._set_error_state(f"视频时长超过 {limit_display} 限制（{minutes:.1f} 分钟）")
             logger.warning("视频时长超限: %.1f 秒", duration_seconds)
             return
+
+        # 检测断点续传
+        self._check_for_resume(file_path)
 
         duration_str = self._format_duration(duration_seconds)
         fmt = suffix.lstrip(".").upper()
@@ -301,6 +330,100 @@ class VideoDropArea(QFrame):
         self._set_loaded_state(file_path.name, duration_str, fmt)
         self.video_loaded.emit(file_path)
         logger.info("视频加载成功: %s (%.1fs)", file_path.name, duration_seconds)
+
+    def _check_for_resume(self, file_path: Path) -> None:
+        """检测断点续传检查点，校验 video_size/config_hash，按情况弹窗。
+
+        - 主流程（hash/size 都匹配）：询问"是否继续"
+        - 异常流程 A（video_size 不匹配）：警告"视频已变更"，自动清理
+        - 异常流程 B（config_hash 不匹配）：提示"配置已变更"，由用户决定
+        """
+        self.resume_requested = False
+        self.checkpoint_data = None
+
+        try:
+            actual_size = file_path.stat().st_size
+        except OSError:
+            return
+        raw = f"{file_path.name}_{actual_size}".encode()
+        video_hash = hashlib.md5(raw).hexdigest()[:8]
+        temp_dir = OUTPUT_DIR / ".temp" / video_hash
+        checkpoint_path = temp_dir / "checkpoint.json"
+
+        if not checkpoint_path.exists():
+            return
+
+        try:
+            data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        if not isinstance(data, dict):
+            return
+
+        completed = data.get("completed_stages", [])
+        current = data.get("current_stage", "")
+        if not completed:
+            return
+
+        # ── 异常流程 A：视频已变更（大小不匹配） ──
+        if data.get("video_size") != actual_size:
+            QMessageBox.warning(
+                self,
+                "视频文件已变更",
+                "检测到视频文件大小与上次翻译不一致，上次的翻译进度无法复用，"
+                "将从头开始。",
+            )
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info("断点续传 | 视频已变更 | 已清理 %s", temp_dir)
+            return
+
+        # ── 异常流程 B：配置已变更（config_hash 不匹配） ──
+        provider = self._config_provider
+        if provider is not None:
+            try:
+                config = provider()
+            except Exception as e:
+                logger.warning("断点续传 | 获取配置失败 | %s", e)
+                config = None
+            if config is not None:
+                payload = json.dumps(config.model_dump(), sort_keys=True, default=str)
+                current_hash = hashlib.sha256(payload.encode()).hexdigest()
+                if data.get("config_hash") != current_hash:
+                    reply = QMessageBox.question(
+                        self,
+                        "配置已变更",
+                        "检测到 ASR/翻译/TTS 引擎或参数与上次不一致，"
+                        "上次的翻译结果可能不匹配。\n\n"
+                        "点击 Yes 仍然继续（跳过已完成阶段，但结果可能不一致）；\n"
+                        "点击 No 从头开始。",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self.resume_requested = True
+                        self.checkpoint_data = data
+                        logger.info("断点续传 | 配置已变更 | 用户选择继续 | stages=%s", completed)
+                    else:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        logger.info("断点续传 | 配置已变更 | 用户放弃 | 已清理 %s", temp_dir)
+                    return
+
+        # ── 主流程：正常的续传询问 ──
+        total = _TOTAL_STAGES
+        reply = QMessageBox.question(
+            self,
+            "检测到未完成的翻译",
+            f"上次翻译已完成 {len(completed)}/{total} 阶段（{', '.join(completed)}），"
+            f"下次将从「{current}」开始。\n\n是否继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.resume_requested = True
+            self.checkpoint_data = data
+            logger.info("断点续传 | 用户选择继续 | stages=%s", completed)
+        else:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info("断点续传 | 用户放弃续传 | 已清理 %s", temp_dir)
 
     # ==================== ffprobe 时长提取 ====================
 

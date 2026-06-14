@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import (
+    OUTPUT_DIR,
     AppConfig,
     ASRConfig,
     SubtitleConfig,
@@ -511,7 +512,7 @@ class ConfigPanel(QWidget):
 
         video_path = self._video_path
         if video_path is not None and video_path.exists():
-            result = validate_all(config, video_path)
+            result = validate_all(config, video_path, OUTPUT_DIR)
         else:
             result = validate_config_only(config)
 

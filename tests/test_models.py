@@ -41,6 +41,47 @@ class TestSubtitleSegment:
         assert seg.audio_path == Path("/tmp/audio.wav")
         assert seg.audio_duration == 4.8
 
+    def test_from_dict_ignores_unknown_fields(self) -> None:
+        """P3：from_dict 容忍未知字段，向前兼容未来版本。"""
+        data = {
+            "index": 2,
+            "start_time": 1.5,
+            "end_time": 3.0,
+            "source_text": "hello",
+            "translated_text": "你好",
+            "audio_path": "/tmp/x.wav",
+            "audio_duration": 1.5,
+            "future_field_v2": "some new field",
+            "another_unknown": 42,
+        }
+        seg = SubtitleSegment.from_dict(data)
+        assert seg.index == 2
+        assert seg.source_text == "hello"
+        assert seg.translated_text == "你好"
+        assert seg.audio_path == Path("/tmp/x.wav")
+
+    def test_from_dict_uses_defaults_for_missing_optional_fields(self) -> None:
+        """缺失的可选字段由 dataclass 默认值兜底。"""
+        data = {"index": 0, "start_time": 0.0, "end_time": 1.0, "source_text": "x"}
+        seg = SubtitleSegment.from_dict(data)
+        assert seg.translated_text == ""
+        assert seg.audio_path == Path()
+        assert seg.audio_duration == 0.0
+
+    def test_roundtrip_to_dict_from_dict(self) -> None:
+        """to_dict → from_dict 往返保持数据一致。"""
+        original = SubtitleSegment(
+            index=3,
+            start_time=5.0,
+            end_time=8.5,
+            source_text="original text",
+            translated_text="译文",
+            audio_path=Path("/tmp/a.wav"),
+            audio_duration=3.2,
+        )
+        roundtrip = SubtitleSegment.from_dict(original.to_dict())
+        assert roundtrip == original
+
 
 class TestStageStatus:
     def test_enum_values(self) -> None:

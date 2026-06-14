@@ -14,6 +14,7 @@ from src.validators import (
     validate_all,
     validate_asr_model,
     validate_config_only,
+    validate_disk_space,
     validate_ffmpeg,
     validate_memory,
     validate_translation_api,
@@ -316,17 +317,17 @@ class TestValidateVideoDuration:
         with patch("src.validators.subprocess.run", return_value=mock_result):
             validate_video_duration(Path("video.mp4"))
 
-    def test_passes_for_exactly_1800_seconds(self) -> None:
+    def test_passes_for_exactly_7200_seconds(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "1800.0\n"
+        mock_result.stdout = "7200.0\n"
         with patch("src.validators.subprocess.run", return_value=mock_result):
             validate_video_duration(Path("video.mp4"))
 
-    def test_fails_for_over_1800_seconds(self) -> None:
+    def test_fails_for_over_7200_seconds(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "1801.0\n"
+        mock_result.stdout = "7201.0\n"
         with (
             patch("src.validators.subprocess.run", return_value=mock_result),
             pytest.raises(ValidationError) as exc_info,
@@ -334,6 +335,7 @@ class TestValidateVideoDuration:
             validate_video_duration(Path("video.mp4"))
         assert exc_info.value.stage == "video"
         assert "超过" in str(exc_info.value)
+        assert "2 小时" in str(exc_info.value)
 
     def test_fails_when_ffprobe_nonzero_exit(self) -> None:
         mock_result = MagicMock()
@@ -458,7 +460,7 @@ class TestValidateAll:
             patch("src.validators.Path.exists", return_value=True),
             patch("src.validators.Path.is_dir", return_value=True),
         ):
-            result = validate_all(config, video)
+            result = validate_all(config, video, tmp_path)
         assert result.is_valid is True
         assert result.errors == []
 
@@ -475,7 +477,7 @@ class TestValidateAll:
             patch("src.validators.psutil.virtual_memory") as mock_vm,
         ):
             mock_vm.return_value.available = int(0.5 * 1024**3)
-            result = validate_all(config, video)
+            result = validate_all(config, video, tmp_path)
 
         assert result.is_valid is False
         stages = {e.stage for e in result.errors}
@@ -506,7 +508,7 @@ class TestValidateAll:
             patch("src.validators.Path.exists", return_value=True),
             patch("src.validators.Path.is_dir", return_value=True),
         ):
-            result = validate_all(config, video)
+            result = validate_all(config, video, tmp_path)
 
         assert result.is_valid is False
         assert len(result.errors) == 1
@@ -608,3 +610,146 @@ class TestValidateConfigOnly:
         assert result.is_valid is False
         assert len(result.errors) == 1
         assert result.errors[0].stage == "memory"
+
+
+# ---------------------------------------------------------------------------
+# validate_disk_space
+# ---------------------------------------------------------------------------
+
+
+class _DiskUsageStub:
+    """shutil.disk_usage 返回值桩（total/used/free 三字段）。"""
+
+    def __init__(self, free: int) -> None:
+        self.total = free * 10
+        self.used = free * 9
+        self.free = free
+
+
+class TestValidateDiskSpace:
+    """validate_disk_space 测试：视频大小 × 3 估算 + 可用空间比对。"""
+
+    def test_passes_when_space_sufficient(self, tmp_path: Path) -> None:
+        """视频 100MB × 3 = 300MB 需求，可用 1GB 时通过。"""
+        video = tmp_path / "test.mp4"
+        video.write_bytes(b"x" * (100 * 1024**2))
+
+        with patch(
+            "src.validators.shutil.disk_usage",
+            return_value=_DiskUsageStub(int(1 * 1024**3)),
+        ):
+            validate_disk_space(video, tmp_path)
+
+    def test_fails_when_space_insufficient(self, tmp_path: Path) -> None:
+        """视频 100MB × 3 = 300MB 需求，可用 100MB 时拒绝。"""
+        video = tmp_path / "test.mp4"
+        video.write_bytes(b"x" * (100 * 1024**2))
+
+        with (
+            patch(
+                "src.validators.shutil.disk_usage",
+                return_value=_DiskUsageStub(int(100 * 1024**2)),
+            ),
+            pytest.raises(ValidationError) as exc_info,
+        ):
+            validate_disk_space(video, tmp_path)
+
+        assert exc_info.value.stage == "disk"
+        assert "磁盘空间不足" in str(exc_info.value)
+        assert "300MB" in str(exc_info.value)
+
+    def test_uses_three_times_multiplier(self, tmp_path: Path) -> None:
+        """恰好 3× 时通过（边界：< 用于比较，等于视为够用）。"""
+        video = tmp_path / "test.mp4"
+        video.write_bytes(b"x" * (50 * 1024**2))  # 50MB → required 150MB
+
+        with patch(
+            "src.validators.shutil.disk_usage",
+            return_value=_DiskUsageStub(int(150 * 1024**2)),
+        ):
+            validate_disk_space(video, tmp_path)
+
+    def test_fails_when_video_file_missing(self, tmp_path: Path) -> None:
+        """视频文件不存在时，stat() 抛 OSError 转为 ValidationError。"""
+        video = tmp_path / "missing.mp4"
+
+        with pytest.raises(ValidationError) as exc_info:
+            validate_disk_space(video, tmp_path)
+
+        assert exc_info.value.stage == "disk"
+        assert "无法读取视频文件大小" in str(exc_info.value)
+
+    def test_fails_when_disk_usage_raises_oserror(self, tmp_path: Path) -> None:
+        """shutil.disk_usage 抛 OSError（如目录权限不足）时转为 ValidationError。"""
+        video = tmp_path / "test.mp4"
+        video.write_bytes(b"x" * 1024)
+
+        with (
+            patch(
+                "src.validators.shutil.disk_usage",
+                side_effect=OSError("permission denied"),
+            ),
+            pytest.raises(ValidationError) as exc_info,
+        ):
+            validate_disk_space(video, tmp_path / "nonexistent")
+
+        assert exc_info.value.stage == "disk"
+        assert "无法获取磁盘信息" in str(exc_info.value)
+
+    def test_zero_size_video_always_passes(self, tmp_path: Path) -> None:
+        """视频大小为 0 时，required=0，任何磁盘都通过（边界场景）。"""
+        video = tmp_path / "empty.mp4"
+        video.touch()
+
+        with patch(
+            "src.validators.shutil.disk_usage",
+            return_value=_DiskUsageStub(0),
+        ):
+            validate_disk_space(video, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# validate_all — disk 集成
+# ---------------------------------------------------------------------------
+
+
+class TestValidateAllDiskIntegration:
+    """验证磁盘校验已纳入 validate_all 批量链。"""
+
+    def test_disk_failure_collected_in_validate_all(self, tmp_path: Path) -> None:
+        """视频大小 × 3 超过可用空间时，disk 错误出现在 errors 中。"""
+        config = AppConfig(
+            asr=ASRConfig(engine="mlx-whisper", model_path="models/asr/test-model"),
+            translation=TranslationConfig(engine="nllb"),
+            tts=TTSConfig(engine="edge-tts", speed=1.0),
+        )
+        video = tmp_path / "big.mp4"
+        video.write_bytes(b"x" * (100 * 1024**2))  # 100MB → required 300MB
+
+        mock_ffmpeg = MagicMock()
+        mock_ffmpeg.stdout = "ffmpeg version 6.0\n"
+        mock_ffprobe = MagicMock()
+        mock_ffprobe.returncode = 0
+        mock_ffprobe.stdout = "120.0\n"
+        mock_vm = MagicMock()
+        mock_vm.available = int(8 * 1024**3)
+
+        with (
+            patch("src.validators.shutil.which", return_value="/usr/bin/ffmpeg"),
+            patch(
+                "src.validators.subprocess.run",
+                side_effect=[mock_ffmpeg, mock_ffprobe],
+            ),
+            patch("src.validators.psutil.virtual_memory", return_value=mock_vm),
+            patch("src.validators.Path.exists", return_value=True),
+            patch("src.validators.Path.is_dir", return_value=True),
+            patch(
+                "src.validators.shutil.disk_usage",
+                return_value=_DiskUsageStub(int(50 * 1024**2)),  # 仅 50MB 可用
+            ),
+        ):
+            result = validate_all(config, video, tmp_path)
+
+        assert result.is_valid is False
+        stages = {e.stage for e in result.errors}
+        assert "disk" in stages

@@ -81,7 +81,7 @@ class TestOpenOutputButton:
     ) -> None:
         output_dir = tmp_path / "output"
         with (
-            patch("src.gui.main_window._OUTPUT_DIR", output_dir),
+            patch("src.gui.main_window.OUTPUT_DIR", output_dir),
             patch("subprocess.run") as mock_run,
         ):
             main_window._open_output_btn.click()
@@ -93,7 +93,7 @@ class TestOpenOutputButton:
     ) -> None:
         output_dir = tmp_path / "nested" / "output"
         with (
-            patch("src.gui.main_window._OUTPUT_DIR", output_dir),
+            patch("src.gui.main_window.OUTPUT_DIR", output_dir),
             patch("subprocess.run"),
         ):
             main_window._open_output_btn.click()
@@ -103,7 +103,7 @@ class TestOpenOutputButton:
         self, main_window: MainWindow
     ) -> None:
         with (
-            patch("src.gui.main_window._OUTPUT_DIR", Path("/nonexistent/output")),
+            patch("src.gui.main_window.OUTPUT_DIR", Path("/nonexistent/output")),
             patch("subprocess.run", side_effect=OSError("permission denied")),
         ):
             main_window._open_output_btn.click()

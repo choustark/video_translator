@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-13"
-last_updated: "2026-06-13 (Epic 1-v2.0 retrospective 完成)"
+last_updated: "2026-06-14 (Epic 2-v2.0 回顾完成，3 个 story 全部 done，进入 v2.0 后半程)"
 project: "video_translator"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -165,11 +165,11 @@ development_status:
 
   # Epic 2-v2.0: 管线韧性
   # 时长放宽 + 断点续传 + Edge-TTS 重试
-  epic-2-v2.0: backlog
-  v2.0-2-1-d61a-relax-duration-limit: backlog
-  v2.0-2-2-d61b-checkpoint-resume: backlog
-  v2.0-2-3-d23-edgetts-retry: backlog
-  epic-2-v2.0-retrospective: optional
+  epic-2-v2.0: done
+  v2.0-2-1-d61a-relax-duration-limit: done
+  v2.0-2-2-d61b-checkpoint-resume: done
+  v2.0-2-3-d23-edgetts-retry: done
+  epic-2-v2.0-retrospective: done
 
   # Epic 3-v2.0: 声音克隆
   # CosyVoice cross_lingual 声音克隆

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import json
 import logging
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +12,7 @@ from src.exceptions import PipelineError
 from src.models import StageStatus, SubtitleSegment
 from src.pipeline import STAGE_NAMES, Pipeline
 from src.signals import PipelineSignals
+from src.utils.temp_manager import compute_video_hash
 
 
 def _make_config(tmp_path: Path) -> AppConfig:
@@ -1214,3 +1215,133 @@ class TestRunCompose:
         assert compose_events[0] == ("合成", 0.33)
         assert compose_events[1] == ("合成", 0.67)
         assert compose_events[2] == ("合成", 1.0)
+
+
+class TestCheckpoint:
+    """断点续传检查点测试（spec 测试策略要求 7 个 pipeline 测试）。"""
+
+    def _setup_pipeline_with_video(
+        self, tmp_path: Path
+    ) -> tuple[Pipeline, Path, Path, Path]:
+        """构造一个带有真实视频文件的 Pipeline + temp_dir。"""
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "test.mp4"
+        video.write_text("fake video content")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        temp_dir = pipeline._create_temp_dir(output_dir, video)
+        pipeline._video_path = video
+        return pipeline, video, output_dir, temp_dir
+
+    def test_load_checkpoint_returns_none_when_no_file(self, tmp_path: Path) -> None:
+        """checkpoint.json 不存在时返回 None。"""
+        pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        assert pipeline._load_checkpoint(temp_dir) is None
+
+    def test_load_checkpoint_returns_none_when_corrupted_json(self, tmp_path: Path) -> None:
+        """损坏的 JSON 时返回 None（不抛异常）。"""
+        pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        (temp_dir / "checkpoint.json").write_text("{not valid json", encoding="utf-8")
+        assert pipeline._load_checkpoint(temp_dir) is None
+
+    def test_load_checkpoint_returns_none_when_video_size_mismatch(
+        self, tmp_path: Path
+    ) -> None:
+        """异常流程 A：video_size 不匹配，返回 None。"""
+        pipeline, video, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
+        # 模拟视频被替换（同路径，但大小变化）
+        video.write_text("different content with different size")
+        assert pipeline._load_checkpoint(temp_dir) is None
+
+    def test_load_checkpoint_returns_none_when_config_hash_mismatch(
+        self, tmp_path: Path
+    ) -> None:
+        """异常流程 B：config_hash 不匹配，返回 None。"""
+        pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
+        # 修改配置（影响 config_hash）
+        pipeline.config.asr.model_path = "/different/path"
+        assert pipeline._load_checkpoint(temp_dir) is None
+
+    def test_load_checkpoint_returns_data_when_valid(self, tmp_path: Path) -> None:
+        """正常情况：hash/size 都匹配，返回 checkpoint dict。"""
+        pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
+        data = pipeline._load_checkpoint(temp_dir)
+        assert data is not None
+        assert data["completed_stages"] == ["音频提取", "ASR"]
+        assert data["current_stage"] == "翻译"
+
+    def test_resume_falls_back_when_segments_missing_but_asr_completed(
+        self, tmp_path: Path
+    ) -> None:
+        """P7：ASR 已 completed 但 segments_checkpoint 缺失 → 回退重跑 ASR。"""
+        pipeline, video, output_dir, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        # 写入检查点，声称 ASR 已完成
+        pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
+        # 故意不创建 segments_checkpoint.json
+
+        with patch.object(pipeline, "_extract_audio") as mock_extract, \
+             patch.object(pipeline, "_run_asr") as mock_asr, \
+             patch.object(pipeline, "_run_translation") as mock_trans, \
+             patch.object(pipeline, "_run_tts") as mock_tts, \
+             patch.object(pipeline, "_run_alignment") as mock_align, \
+             patch.object(pipeline, "_compose"):
+            mock_extract.return_value = temp_dir / "audio.wav"
+            (temp_dir / "audio.wav").write_text("fake audio")
+            mock_asr.return_value = []
+            mock_trans.return_value = []
+            mock_tts.return_value = []
+            mock_align.return_value = []
+
+            pipeline.process(video, output_dir, resume=True)
+
+        # 由于 segments 缺失，ASR 应该被重新执行（而不是跳过）
+        assert mock_asr.called
+        # 翻译也应被重新执行
+        assert mock_trans.called
+
+    def test_write_checkpoint_preserves_created_at(self, tmp_path: Path) -> None:
+        """P6：第二次写入时 created_at 保留首次的时间戳。"""
+        pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
+        pipeline._write_checkpoint(temp_dir, ["音频提取"], "ASR")
+        first_data = json.loads((temp_dir / "checkpoint.json").read_text(encoding="utf-8"))
+        first_created = first_data["created_at"]
+
+        # 模拟时间流逝（保证 updated_at 不同）
+        import time as _time
+        _time.sleep(0.01)
+        pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
+        second_data = json.loads((temp_dir / "checkpoint.json").read_text(encoding="utf-8"))
+
+        assert second_data["created_at"] == first_created
+        assert second_data["updated_at"] != first_created
+
+
+class TestLoadSegmentsCheckpoint:
+    """segments_checkpoint.json 加载容错测试（P4）。"""
+
+    def _setup(self, tmp_path: Path) -> tuple[Pipeline, Path]:
+        pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
+        video = tmp_path / "test.mp4"
+        video.write_text("content")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        temp_dir = output_dir / ".temp" / compute_video_hash(video)
+        temp_dir.mkdir(parents=True)
+        return pipeline, temp_dir
+
+    def test_returns_empty_when_no_file(self, tmp_path: Path) -> None:
+        pipeline, temp_dir = self._setup(tmp_path)
+        assert pipeline._load_segments_checkpoint(temp_dir) == []
+
+    def test_returns_empty_when_corrupted_json(self, tmp_path: Path) -> None:
+        pipeline, temp_dir = self._setup(tmp_path)
+        (temp_dir / "segments_checkpoint.json").write_text("{bad", encoding="utf-8")
+        assert pipeline._load_segments_checkpoint(temp_dir) == []
+
+    def test_returns_empty_when_not_list(self, tmp_path: Path) -> None:
+        pipeline, temp_dir = self._setup(tmp_path)
+        (temp_dir / "segments_checkpoint.json").write_text('{"key": "value"}', encoding="utf-8")
+        assert pipeline._load_segments_checkpoint(temp_dir) == []

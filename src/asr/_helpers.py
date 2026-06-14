@@ -10,6 +10,7 @@ import psutil
 from src.exceptions import PipelineError
 from src.models import SubtitleSegment
 
+
 def _build_proper_nouns_list(user_nouns: list[str]) -> list[str]:
     """根据用户配置构建专有名词列表，去重。
 

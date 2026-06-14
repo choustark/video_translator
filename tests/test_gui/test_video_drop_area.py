@@ -201,26 +201,26 @@ class TestDropEventFormatValidation:
 
 
 class TestDropEventDurationValidation:
-    """时长校验测试 — 超过 30 分钟拒绝"""
+    """时长校验测试 — 超过 2 小时拒绝"""
 
     def test_rejects_duration_exceeds_limit(self, qapp) -> None:
-        """超过 1800 秒的视频触发 error 状态"""
-        with _mock_ffprobe(1900.0):
+        """超过 7200 秒的视频触发 error 状态"""
+        with _mock_ffprobe(7500.0):
             area = VideoDropArea()
             area.dropEvent(_make_mock_drop("/test/video.mp4"))
 
-            assert "视频时长超过 30 分钟" in area._hint_label.text()
+            assert "视频时长超过 2 小时" in area._hint_label.text()
             assert area.video_path is None
 
     def test_accepts_duration_at_limit(self, qapp) -> None:
-        """恰好 1800 秒的视频接受"""
-        with _mock_ffprobe(1800.0):
+        """恰好 7200 秒的视频接受"""
+        with _mock_ffprobe(7200.0):
             area = VideoDropArea()
             area.dropEvent(_make_mock_drop("/test/video.mp4"))
 
             assert area.video_path is not None
             assert area.video_info is not None
-            assert area.video_info["duration"] == "30:00"
+            assert area.video_info["duration"] == "120:00"
 
     def test_accepts_duration_under_limit(self, qapp) -> None:
         """600 秒以内的视频正常加载"""
@@ -411,3 +411,100 @@ class TestSelectFile:
 
         assert area.video_path is None
         assert "不存在" in area._hint_label.text()
+
+
+# ==================== 断点续传测试（spec 测试策略要求 2 个 GUI 测试） ====================
+
+
+class TestCheckForResume:
+    """VideoDropArea._check_for_resume 断点续传弹窗逻辑测试。"""
+
+    def _write_checkpoint(
+        self,
+        output_dir: Path,
+        video: Path,
+        recorded_size: int | None = None,
+        config_hash: str = "sha256:abc",
+    ) -> Path:
+        """构造 output/.temp/{hash}/checkpoint.json。
+
+        hash 基于视频文件实际大小计算（与 _check_for_resume 中公式一致）。
+        recorded_size 用于显式覆盖 checkpoint.json 内的 video_size 字段，
+        模拟"视频被替换为同 hash 但不同 size"的场景。
+        """
+        import hashlib
+        import json
+
+        actual_size = video.stat().st_size
+        raw = f"{video.name}_{actual_size}".encode()
+        video_hash = hashlib.md5(raw).hexdigest()[:8]
+        temp_dir = output_dir / ".temp" / video_hash
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint = {
+            "version": 1,
+            "video_path": str(video),
+            "video_size": recorded_size if recorded_size is not None else actual_size,
+            "config_hash": config_hash,
+            "completed_stages": ["音频提取", "ASR"],
+            "current_stage": "翻译",
+        }
+        (temp_dir / "checkpoint.json").write_text(
+            json.dumps(checkpoint), encoding="utf-8"
+        )
+        return temp_dir
+
+    def test_video_size_mismatch_cleans_temp_dir(self, qapp, tmp_path: Path) -> None:
+        """异常流程 A：video_size 不匹配 → 警告 + 清理 temp_dir。"""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        video = tmp_path / "test.mp4"
+        video.write_text("actual video content")  # 实际大小
+
+        # 写入检查点，但记录的 video_size 与实际不符
+        temp_dir = self._write_checkpoint(output_dir, video, recorded_size=99999)
+
+        area = VideoDropArea()
+        with patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir), \
+             patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning, \
+             patch("src.gui.video_drop_area.QMessageBox.question") as mock_question:
+            area._check_for_resume(video)
+
+        assert area.resume_requested is False
+        assert mock_warning.called
+        assert not mock_question.called  # 不应弹主询问
+        assert not temp_dir.exists()  # 旧检查点被清理
+
+    def test_config_hash_mismatch_user_declines_cleans_temp_dir(
+        self, qapp, tmp_path: Path
+    ) -> None:
+        """异常流程 B：config_hash 不匹配，用户选 No → 清理 temp_dir。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        from src.config import AppConfig, ASRConfig, TranslationConfig, TTSConfig
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        video = tmp_path / "test.mp4"
+        video.write_text("content")
+
+        temp_dir = self._write_checkpoint(output_dir, video, config_hash="old_hash")
+
+        area = VideoDropArea()
+        config = AppConfig(
+            asr=ASRConfig(engine="mlx-whisper", model_path="/asr"),
+            translation=TranslationConfig(engine="glm"),
+            tts=TTSConfig(engine="cosyvoice", speed=1.0),
+        )
+        area.set_config_provider(lambda: config)
+
+        with patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir), \
+             patch("src.gui.video_drop_area.QMessageBox.question") as mock_question, \
+             patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning:
+            mock_question.return_value = QMessageBox.StandardButton.No
+            area._check_for_resume(video)
+
+        # 用户选 No → 不续传 + 清理 temp_dir
+        assert area.resume_requested is False
+        assert mock_question.called
+        assert not mock_warning.called  # 不应弹警告（B 流程是 question 不是 warning）
+        assert not temp_dir.exists()

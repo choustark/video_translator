@@ -5,8 +5,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QPushButton,
-    QTextBrowser,
     QSizePolicy,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )

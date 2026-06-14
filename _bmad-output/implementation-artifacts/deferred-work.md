@@ -63,7 +63,7 @@
 | D42 | self.signals 防御性 None 检查缺失 | 5-1 review R2 | Pipeline 总以有效 Signals 构造 |
 | D37 | ~~CosyVoice 存根总触发降级~~ | 5-1 review R1 | **已解决** — subprocess 桥完整实现 (2026-05-22) |
 | D44 | ~~ASR 模型内存未主动释放~~ | 用户反馈 | **已解决** — ASR 完成后 del result + gc.collect() + mx.clear_cache() (2026-05-22) |
-| D45 | ~~视频时长限制 10 分钟过短~~ | 用户反馈 | **已解决** — 放宽至 30 分钟（1800 秒），同步更新 validators/video_drop_area (2026-05-22) |
+| D45 | ~~视频时长限制 10 分钟过短~~ | 用户反馈 | **已解决** — v1.1 放宽至 30 分钟；v2.0 进一步放宽至 2 小时（7200 秒）+ 新增磁盘空间校验 (2026-06-13，story v2.0-2-1) |
 | D31 | validate_all 的 globals() 字符串查找脆弱 | 3-1 review | 重命名可能 KeyError |
 | D29 | 零时长视频（duration=0.0）会通过校验 | 3-1 review | 损坏视频未拦截 |
 | D27 | validate_ffmpeg 应使用解析后的 ffmpeg_path | 3-1 review | 功能无影响 |
@@ -330,7 +330,7 @@ D55（删滑块）──→ D2（音频进度）──→ D20（FasterWhisper）
 
 **需求拆分（两部分独立）：**
 
-#### D61a — 放宽时长限制（前置，极低复杂度）
+#### D61a — 放宽时长限制（前置，极低复杂度）✅ 已解决 (2026-06-13, story v2.0-2-1)
 
 将 `MAX_DURATION_SECONDS` 从 1800（30 分钟）放宽到 7200（2 小时），同步更新 `validators.py` 和 `video_drop_area.py`。需增加磁盘空间校验（2 小时视频中间产物约 1GB）。
 
@@ -577,3 +577,21 @@ CosyVoice 已通过 subprocess 桥集成（2026-05-22），使用独立 conda �
 
 - [Defer] Spec 常量 `0x00000008` 错误 — 实际 Windows API 值为 `0x00000200`，实现已使用正确值，spec 文档需修正
 - [Defer] `README_zh.md` 缺少第三方依赖章节 — 需中文翻译同步
+
+## Deferred from: code review of v2.0-2-1-d61a-relax-duration-limit (2026-06-13)
+
+- [Defer] AC3 部分残留 — 2 处代码注释含 "30 分钟"（validators.py:21, video_drop_area.py:28），有意保留历史上下文
+- [Defer] `output_dir` 硬编码为 `"output"`，不可配置 — 当前无用户配置输出目录需求
+- [Defer] 测试中 video 和 output 目录混用（同 `tmp_path`）— 未覆盖不同卷场景
+
+## Deferred from: code review of v2.0-2-3-d23-edgetts-retry (2026-06-14)
+
+- [Defer] `Communicate()` 构造函数网络异常（aiohttp.ClientError/ssl.SSLError/TimeoutError）未被重试 — 当前仅重试 NoAudioReceived/WebSocketError，后续可扩展
+- [Defer] `test_retry_uses_exponential_backoff` mock 覆盖所有策略函数 — 测试脆弱但实际重试行为由其他测试充分覆盖
+
+## Deferred from: code review of v2.0-2-2-d61b-checkpoint-resume (2026-06-14)
+
+- [Defer] `_compute_config_hash` 用 `default=str` 序列化 Path — 路径在不同机器/工作目录下可能 str 不同（相对 vs 绝对），导致同配置不同 hash — 需要 path-agnostic 重构
+- [Defer] 检查点格式无版本消费 — `version: 1` 写入了但 `_load_checkpoint` 从未读取，未来跨版本兼容需补
+- [Defer] 日志泄露绝对路径 — checkpoint/drop area 日志直接打印完整 temp_dir，可能含用户名 — 项目其他位置同风格，独立修复
+- [Defer] `audio_path` 字段死代码 — 写入 checkpoint.json 但 `_load_checkpoint` 从不消费 — 可作未来调试用途保留

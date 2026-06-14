@@ -11,15 +11,23 @@ from pathlib import Path
 
 import psutil
 
-from src.config import DEFAULT_MEMORY_WARNING_GB, AppConfig
+from src.config import (
+    DEFAULT_MEMORY_WARNING_GB,
+    MAX_VIDEO_DURATION_SECONDS,
+    AppConfig,
+    format_duration_limit,
+)
 from src.exceptions import ValidationError
 from src.utils.platform_utils import get_ffmpeg_install_hint
 
 logger = logging.getLogger("video_translator")
 
 _MIN_FFMPEG_VERSION = 4
-_MAX_VIDEO_DURATION_SECONDS = 1800
 _API_CHECK_TIMEOUT_SECONDS = 5
+
+# 磁盘空间估算系数：视频大小 × 3 足够覆盖 WAV 提取 + TTS 段音频 + 最终合成视频的峰值占用。
+# 保守取值，给用户留余量；2 小时视频中间产物实测约 1.2GB。
+_DISK_SPACE_ESTIMATE_MULTIPLIER = 3
 
 _SUPPORTED_VIDEO_FORMATS = frozenset({".mp4", ".mkv", ".mov", ".avi"})
 
@@ -254,7 +262,7 @@ def validate_video_format(video_path: Path) -> None:
 
 
 def validate_video_duration(video_path: Path) -> None:
-    """校验视频时长是否在限制内（≤30 分钟）。
+    """校验视频时长是否在限制内（默认 ≤2 小时，由 MAX_VIDEO_DURATION_SECONDS 控制）。
 
     通过 ffprobe 获取视频时长。
 
@@ -299,11 +307,12 @@ def validate_video_duration(video_path: Path) -> None:
             suggestion="请确认视频文件有效且未损坏",
         )
 
-    if duration > _MAX_VIDEO_DURATION_SECONDS:
+    if duration > MAX_VIDEO_DURATION_SECONDS:
+        limit_display = format_duration_limit(MAX_VIDEO_DURATION_SECONDS)
         raise ValidationError(
-            f"视频时长 {duration:.0f} 秒超过 {_MAX_VIDEO_DURATION_SECONDS} 秒（30 分钟）限制",
+            f"视频时长 {duration:.0f} 秒超过 {limit_display} 限制",
             stage="video",
-            suggestion="请选择时长不超过 30 分钟的视频",
+            suggestion=f"请选择时长不超过 {limit_display} 的视频",
         )
 
 
@@ -323,6 +332,50 @@ def validate_memory(requirement_gb: float = DEFAULT_MEMORY_WARNING_GB) -> None:
             f"可用内存不足: {available_gb:.1f}GB，建议至少 {requirement_gb:.0f}GB 可用",
             stage="memory",
             suggestion="请关闭其他应用释放内存，或使用快速预设（Edge-TTS + tiny 模型）",
+        )
+
+
+def validate_disk_space(video_path: Path, output_dir: Path) -> None:
+    """校验目标磁盘可用空间是否足够容纳中间产物 + 最终合成视频。
+
+    估算策略：视频大小 × 3（保守估计，覆盖 WAV 提取 + TTS 段音频 + 合成视频峰值）。
+    通过 shutil.disk_usage 获取真实可用空间，跨平台一致（macOS/Linux/Windows）。
+
+    Args:
+        video_path: 视频文件路径，用于读取文件大小作为估算基准。
+        output_dir: 输出目录（中间产物 .temp/ 和最终视频都写在这里）。
+
+    Raises:
+        ValidationError: 视频文件无法读取、输出目录不可访问、或可用空间不足。
+    """
+    try:
+        video_size = video_path.stat().st_size
+    except OSError as e:
+        raise ValidationError(
+            f"无法读取视频文件大小: {video_path}",
+            stage="disk",
+            suggestion="请确认视频文件未被移动或删除",
+        ) from e
+
+    required = video_size * _DISK_SPACE_ESTIMATE_MULTIPLIER
+
+    try:
+        usage = shutil.disk_usage(output_dir)
+    except OSError as e:
+        raise ValidationError(
+            f"无法获取磁盘信息: {output_dir}",
+            stage="disk",
+            suggestion="请确认输出目录存在且可访问",
+        ) from e
+
+    if usage.free < required:
+        free_mb = usage.free / (1024**2)
+        required_mb = required / (1024**2)
+        raise ValidationError(
+            f"磁盘空间不足：预估需要 {required_mb:.0f}MB（视频大小 × "
+            f"{_DISK_SPACE_ESTIMATE_MULTIPLIER}），当前可用 {free_mb:.0f}MB",
+            stage="disk",
+            suggestion="请清理磁盘空间或将输出目录改到容量更大的盘",
         )
 
 
@@ -370,7 +423,9 @@ def validate_config_only(config: AppConfig) -> ValidationResult:
     return ValidationResult(errors)
 
 
-def validate_all(config: AppConfig, video_path: Path) -> ValidationResult:
+def validate_all(
+    config: AppConfig, video_path: Path, output_dir: Path
+) -> ValidationResult:
     errors: list[ValidationError] = []
 
     checks: list[tuple[str, tuple[object, ...]]] = [
@@ -380,6 +435,7 @@ def validate_all(config: AppConfig, video_path: Path) -> ValidationResult:
         ("validate_tts_model", (config.tts.engine, config.tts.model_path)),
         ("validate_video_format", (video_path,)),
         ("validate_video_duration", (video_path,)),
+        ("validate_disk_space", (video_path, output_dir)),
         ("validate_memory", (config.memory.warning_gb,)),
     ]
 

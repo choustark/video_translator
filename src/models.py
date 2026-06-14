@@ -17,6 +17,33 @@ class SubtitleSegment:
     actual_start_time: float | None = None
     actual_end_time: float | None = None
 
+    def to_dict(self) -> dict:
+        """序列化为 JSON 兼容 dict。Path 转为字符串，None 保留。"""
+        d = {}
+        for f in _SEGMENT_FIELDS:
+            v = getattr(self, f.name)
+            if isinstance(v, Path):
+                d[f.name] = str(v)
+            else:
+                d[f.name] = v
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SubtitleSegment":
+        """从 dict 反序列化，自动转换 audio_path 为 Path。
+
+        未知字段会被忽略（向前兼容：未来版本写入的新字段不会让旧版本崩溃）。
+        缺失的可选字段由 dataclass 默认值兜底。
+        """
+        known = {f.name for f in _SEGMENT_FIELDS}
+        kwargs = {k: v for k, v in data.items() if k in known}
+        if isinstance(kwargs.get("audio_path"), str):
+            kwargs["audio_path"] = Path(kwargs["audio_path"])
+        return cls(**kwargs)
+
+
+_SEGMENT_FIELDS = list(SubtitleSegment.__dataclass_fields__.values())
+
 
 class StageStatus(Enum):
     PENDING = "pending"

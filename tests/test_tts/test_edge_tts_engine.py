@@ -178,7 +178,8 @@ class TestEdgeTTSVoiceAndSpeed:
 
 
 class TestEdgeTTSErrorHandling:
-    def test_no_audio_received_raises_pipeline_error(self, tmp_path: Path) -> None:
+    def test_no_audio_received_exhausts_retries(self, tmp_path: Path) -> None:
+        """NoAudioReceived 重试 3 次后抛 PipelineError，消息含"已重试"字样。"""
         import edge_tts as _edge_tts
 
         config = _make_config()
@@ -190,15 +191,18 @@ class TestEdgeTTSErrorHandling:
             _edge_tts.exceptions.NoAudioReceived("no audio")
         )
 
-        with patch(
-            "src.tts.edge_tts_engine.edge_tts.Communicate",
-            return_value=mock_comm_instance,
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.wait_exponential", return_value=lambda *_a, **_kw: 0),
         ):
-            with pytest.raises(PipelineError, match="未收到音频") as exc_info:
+            with pytest.raises(PipelineError, match="已重试 3 次") as exc_info:
                 engine.synthesize(segments, tmp_path)
             assert exc_info.value.stage == "TTS"
+            assert mock_comm_instance.save_sync.call_count == 3
 
-    def test_websocket_error_raises_pipeline_error(self, tmp_path: Path) -> None:
+    def test_websocket_error_exhausts_retries(self, tmp_path: Path) -> None:
+        """WebSocketError 重试 3 次后抛 PipelineError。"""
         import edge_tts as _edge_tts
 
         config = _make_config()
@@ -210,13 +214,15 @@ class TestEdgeTTSErrorHandling:
             _edge_tts.exceptions.WebSocketError("ws error")
         )
 
-        with patch(
-            "src.tts.edge_tts_engine.edge_tts.Communicate",
-            return_value=mock_comm_instance,
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.wait_exponential", return_value=lambda *_a, **_kw: 0),
         ):
-            with pytest.raises(PipelineError, match="WebSocket") as exc_info:
+            with pytest.raises(PipelineError, match="已重试 3 次") as exc_info:
                 engine.synthesize(segments, tmp_path)
             assert exc_info.value.stage == "TTS"
+            assert mock_comm_instance.save_sync.call_count == 3
 
     def test_generic_error_raises_pipeline_error(self, tmp_path: Path) -> None:
         config = _make_config()
@@ -233,6 +239,8 @@ class TestEdgeTTSErrorHandling:
             with pytest.raises(PipelineError, match="合成失败") as exc_info:
                 engine.synthesize(segments, tmp_path)
             assert exc_info.value.stage == "TTS"
+            # 非网络异常不应触发重试
+            assert mock_comm_instance.save_sync.call_count == 1
 
     def test_get_duration_error_wrapped_as_pipeline_error(self, tmp_path: Path) -> None:
         config = _make_config()
@@ -255,3 +263,162 @@ class TestEdgeTTSErrorHandling:
         ):
             engine.synthesize(segments, tmp_path)
         assert exc_info.value.stage == "TTS"
+
+
+# ==================== 重试机制测试（v2.0-2-3） ====================
+
+
+def _no_wait() -> "patch[object]":
+    """跳过 wait_exponential 的真实 sleep，避免测试卡顿。"""
+    return patch(
+        "src.tts.edge_tts_engine.wait_exponential",
+        return_value=lambda *_a, **_kw: 0,
+    )
+
+
+class TestEdgeTTSRetry:
+    """Edge-TTS tenacity 重试机制测试。"""
+
+    def test_no_audio_received_retries_until_success(self, tmp_path: Path) -> None:
+        """AC1+AC3：NoAudioReceived 前 2 次失败、第 3 次成功 → 总调用 3 次。"""
+        import edge_tts as _edge_tts
+
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好")
+
+        mock_comm_instance = MagicMock()
+        mock_comm_instance.save_sync.side_effect = [
+            _edge_tts.exceptions.NoAudioReceived("attempt 1"),
+            _edge_tts.exceptions.NoAudioReceived("attempt 2"),
+            None,  # 第三次成功
+        ]
+
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                  return_value=_mock_audio_duration(2.0)),
+            _no_wait(),
+        ):
+            engine.synthesize(segments, tmp_path)
+
+        assert mock_comm_instance.save_sync.call_count == 3
+        assert segments[0].audio_path == tmp_path / "segments" / "0000.mp3"
+
+    def test_websocket_error_retries_until_success(self, tmp_path: Path) -> None:
+        """AC2：WebSocketError 重试后能成功。"""
+        import edge_tts as _edge_tts
+
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好")
+
+        mock_comm_instance = MagicMock()
+        mock_comm_instance.save_sync.side_effect = [
+            _edge_tts.exceptions.WebSocketError("ws fail"),
+            None,
+        ]
+
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                  return_value=_mock_audio_duration(2.0)),
+            _no_wait(),
+        ):
+            engine.synthesize(segments, tmp_path)
+
+        assert mock_comm_instance.save_sync.call_count == 2
+
+    def test_runtime_error_not_retried(self, tmp_path: Path) -> None:
+        """AC7：非网络异常立即抛出，不触发重试。"""
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好")
+
+        mock_comm_instance = MagicMock()
+        mock_comm_instance.save_sync.side_effect = RuntimeError("unexpected")
+
+        with patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                   return_value=mock_comm_instance):
+            with pytest.raises(PipelineError, match="合成失败"):
+                engine.synthesize(segments, tmp_path)
+
+        assert mock_comm_instance.save_sync.call_count == 1
+
+    def test_retry_emits_progress_callback(self, tmp_path: Path) -> None:
+        """AC5：重试时通过 progress_callback 上报"正在重试 (n/3)..."。"""
+        import edge_tts as _edge_tts
+
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好", "世界")
+        callbacks: list[ProgressEvent] = []
+
+        # 第一段：失败 1 次后成功
+        # 第二段：失败 3 次后耗尽
+        mock_comm_instance = MagicMock()
+        mock_comm_instance.save_sync.side_effect = [
+            _edge_tts.exceptions.NoAudioReceived("a1"),
+            None,
+            _edge_tts.exceptions.WebSocketError("a2"),
+            _edge_tts.exceptions.WebSocketError("a3"),
+            _edge_tts.exceptions.WebSocketError("a4"),
+        ]
+
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                  return_value=_mock_audio_duration(2.0)),
+            _no_wait(),
+            pytest.raises(PipelineError, match="已重试"),
+        ):
+            engine.synthesize(segments, tmp_path, callbacks.append)
+
+        retry_events = [e for e in callbacks if "正在重试" in e.message]
+        # 至少 3 次重试事件（第一段 1 次 + 第二段 2 次）
+        assert len(retry_events) >= 3
+        for ev in retry_events:
+            assert ev.stage == "TTS"
+            assert "正在重试" in ev.message
+            assert "/3)" in ev.message
+
+    def test_success_calls_save_sync_once(self, tmp_path: Path) -> None:
+        """AC8：成功路径仅调用 1 次 save_sync（每段）。"""
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好", "世界")
+
+        with _patch_tts(2.0) as stack:
+            engine.synthesize(segments, tmp_path)
+            # 两段各 1 次调用
+            assert stack.mock_comm.return_value.save_sync.call_count == 2
+
+    def test_retry_uses_exponential_backoff(self, tmp_path: Path) -> None:
+        """AC4：使用 wait_exponential(min=1, max=10)。"""
+        import edge_tts as _edge_tts
+
+        config = _make_config()
+        engine = EdgeTTSEngine(config)
+        segments = _make_segments("你好")
+
+        mock_comm_instance = MagicMock()
+        mock_comm_instance.save_sync.side_effect = (
+            _edge_tts.exceptions.NoAudioReceived("always fail")
+        )
+
+        with (
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
+                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.wait_exponential") as mock_wait,
+            patch("src.tts.edge_tts_engine.stop_after_attempt") as mock_stop,
+            patch("src.tts.edge_tts_engine.retry_if_exception_type") as mock_retry_if,
+            pytest.raises(PipelineError, match="已重试"),
+        ):
+            engine.synthesize(segments, tmp_path)
+
+        mock_wait.assert_called_once_with(min=1, max=10)
+        mock_stop.assert_called_once_with(3)
+        mock_retry_if.assert_called_once()

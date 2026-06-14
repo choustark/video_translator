@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.config import AppConfig
+from src.config import OUTPUT_DIR, AppConfig
 from src.gui.config_panel import ConfigPanel
 from src.gui.constants import (
     COLOR_SECONDARY_BG,
@@ -36,9 +36,6 @@ from src.utils.platform_utils import open_with_default_app
 from src.validators import validate_all
 
 logger = logging.getLogger("video_translator")
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_OUTPUT_DIR = _PROJECT_ROOT / "output"
 
 
 class MainWindow(QMainWindow):
@@ -84,6 +81,7 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(SPACING_SM)
 
         self._video_drop_area = VideoDropArea()
+        self._video_drop_area.set_config_provider(self._config_panel.get_config)
         right_layout.addWidget(self._video_drop_area)
 
         right_layout.addSpacing(SPACING_MD)
@@ -159,7 +157,7 @@ class MainWindow(QMainWindow):
             return
 
         # 翻译前校验防弹窗：按钮联动已做第一道防线，此为第二道保险
-        result = validate_all(config, video_path)
+        result = validate_all(config, video_path, OUTPUT_DIR)
         if not result.is_valid:
             self._show_validation_failure_dialog(result.errors)
             return
@@ -177,7 +175,8 @@ class MainWindow(QMainWindow):
 
         self._pipeline = Pipeline(config, self._signals)
         try:
-            self._pipeline.start(video_path, _OUTPUT_DIR)
+            resume = self._video_drop_area.resume_requested
+            self._pipeline.start(video_path, OUTPUT_DIR, resume=resume)
         except RuntimeError:
             self._on_pipeline_finished()
 
@@ -229,10 +228,10 @@ class MainWindow(QMainWindow):
 
     def _open_output_dir(self) -> None:
         try:
-            _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            open_with_default_app(_OUTPUT_DIR)
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            open_with_default_app(OUTPUT_DIR)
         except Exception:
-            logger.error("无法打开输出目录: %s", _OUTPUT_DIR, exc_info=True)
+            logger.error("无法打开输出目录: %s", OUTPUT_DIR, exc_info=True)
 
     def _setup_tab_order(self) -> None:
         """设置 Tab 焦点顺序：左侧配置项 → 右侧操作区，按界面从上到下（AC7 / UX-DR21）。

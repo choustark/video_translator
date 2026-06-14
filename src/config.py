@@ -38,6 +38,29 @@ CHARS_PER_SEC = 4.0
 # 默认内存告警阈值（GB），与 MemoryConfig.warning_gb 默认值保持同步
 DEFAULT_MEMORY_WARNING_GB = 6.0
 
+# 项目输出目录（中间产物 .temp/ 与最终合成视频都写在这里）
+OUTPUT_DIR = _PROJECT_ROOT / "output"
+
+# 视频时长上限（秒）。v2.0 从 1800（30 分钟）放宽到 7200（2 小时）。
+# 依据：管线逐段流式处理，内存不随视频长度增长；真正瓶颈是失败重跑（D61b 断点续传解决）。
+MAX_VIDEO_DURATION_SECONDS = 7200
+
+
+def format_duration_limit(seconds: int) -> str:
+    """将时长上限秒数格式化为人类可读的"X 小时"/"X 分钟"文案。
+
+    用于错误消息中显示限制，避免硬编码"2 小时"等字符串，再次调整上限时文案自动同步。
+
+    Args:
+        seconds: 时长上限（秒）。
+
+    Returns:
+        格式化后的中文文案，如 "2 小时" / "30 分钟" / "90 分钟"。
+    """
+    if seconds % 3600 == 0 and seconds >= 3600:
+        return f"{seconds // 3600} 小时"
+    return f"{seconds // 60} 分钟"
+
 
 class ASRConfig(BaseModel):
     engine: Literal["mlx-whisper", "faster-whisper", "whisper"]

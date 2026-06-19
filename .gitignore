@@ -15,6 +15,8 @@ models/asr/*
 !models/asr/.gitkeep
 models/tts/*
 !models/tts/.gitkeep
+# ChatTTS / 第三方引擎模型文件（单个可达数百 MB，超过 GitHub 100 MB 限制）
+asset/
 output/*
 !output/.gitkeep
 !output/.temp/

@@ -1,12 +1,14 @@
-"""D60 CosyVoice 声音克隆 — 引擎层 reference_audio 透传测试。
+"""D60 CosyVoice 声音克隆 — 引擎层 reference_audio 处理测试。
 
-验证 CosyVoiceEngine.synthesize 将 config.reference_audio 透传到 worker stdin JSON。
+D60 hotfix #3（2026-06-19）后，主进程不再把用户原始参考音频路径直接透传给 worker，
+而是先用 ffmpeg 转成 16kHz mono WAV 临时文件，再把临时路径写入 stdin JSON。
 """
 
 from __future__ import annotations
 
 import io
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -67,13 +69,21 @@ def _build_fake_process(stdin_captured: dict[str, Any]) -> MagicMock:
 
 
 class TestReferenceAudioPassThrough:
-    def test_synthesize_passes_reference_audio_to_worker_stdin(self, tmp_path: Path) -> None:
-        """AC6 测试 1：reference_audio 非空时，stdin JSON 包含该字段且值正确。"""
-        config = _make_config(reference_audio="/abs/path/ref.wav")
+    def test_synthesize_passes_converted_wav_path_to_worker_stdin(self, tmp_path: Path) -> None:
+        """AC6 测试 1：reference_audio 非空 → 主进程 ffmpeg 转码后写入 stdin。
+
+        用户原始路径（如 mp3）不应直接出现在 stdin；stdin 里的应是
+        temp_dir/reference_audio.wav 这个 ffmpeg 转换后的 wav 路径。
+        """
+        # 构造一个真实存在的"源音频"文件，让 _prepare_reference_audio 走 ffmpeg 路径
+        src_mp3 = tmp_path / "user_ref.mp3"
+        src_mp3.write_bytes(b"fake mp3")
+        config = _make_config(reference_audio=str(src_mp3))
         engine = CosyVoiceEngine(config)
         captured: dict[str, Any] = {}
         fake_process = _build_fake_process(captured)
 
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stderr=b"")
         with (
             patch.object(
                 engine,
@@ -81,14 +91,19 @@ class TestReferenceAudioPassThrough:
                 return_value=(Path("/opt/conda/bin/python"), Path("/opt/cosyvoice")),
             ),
             patch("src.tts.cosyvoice_engine.subprocess.Popen", return_value=fake_process),
+            patch("src.tts.cosyvoice_engine.subprocess.run", return_value=completed),
             patch.object(CosyVoiceEngine, "_apply_results"),
         ):
             engine.synthesize(_make_segments(), tmp_path)
 
-        assert captured.get("reference_audio") == "/abs/path/ref.wav"
+        # stdin 里的 reference_audio 应是转码后的 wav 路径，不是原始 mp3 路径
+        expected_wav = str(tmp_path / "reference_audio.wav")
+        assert captured.get("reference_audio") == expected_wav
+        # 原始 mp3 路径不应出现在 stdin
+        assert captured.get("reference_audio") != str(src_mp3)
 
     def test_synthesize_empty_reference_audio_backward_compatible(self, tmp_path: Path) -> None:
-        """AC6 测试 2：reference_audio="" 时 stdin JSON 仍含字段（值为空），向后兼容。"""
+        """AC6 测试 2：reference_audio="" → 字段仍存在但为空，向后兼容。"""
         config = _make_config(reference_audio="")
         engine = CosyVoiceEngine(config)
         captured: dict[str, Any] = {}

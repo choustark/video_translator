@@ -2,6 +2,9 @@
 
 worker 运行在 conda Python 3.10 环境，主进程无法直接 import cosyvoice。
 测试通过 monkeypatch sys.modules 注入 mock 模块，模拟两种推理路径。
+
+D60 hotfix #3（2026-06-19）：worker 直接把参考音频路径字符串透传给
+inference_cross_lingual，不再做 tensor 归一化（CosyVoice 内部 load_wav 自带）。
 """
 
 from __future__ import annotations
@@ -21,15 +24,14 @@ def _install_cosyvoice_mocks(
     monkeypatch: pytest.MonkeyPatch,
     inference_sft: MagicMock | None = None,
     inference_cross_lingual: MagicMock | None = None,
-    torchaudio_load: MagicMock | None = None,
 ) -> tuple[types.ModuleType, types.ModuleType]:
     """向 sys.modules 注入 mock 的 cosyvoice 和 torchaudio 模块。
 
     worker 通过 `import torchaudio` 和 `from cosyvoice.cli.cosyvoice import CosyVoice` 引用，
     因此需要构造对应的子模块结构。
 
-    D60 hotfix 后 worker 对 prompt_wav 调用 .dim()/.shape/.device/.cpu()，
-    故 torchaudio.load 默认返回真 torch tensor（16kHz mono）。
+    D60 hotfix #3 后 worker 直接传路径字符串给 inference_cross_lingual，
+    不再对 prompt_wav 做 tensor 处理。torchaudio.save 仍需 mock 避免写盘。
     """
     cosyvoice_pkg = types.ModuleType("cosyvoice")
     cli_pkg = types.ModuleType("cosyvoice.cli")
@@ -46,19 +48,12 @@ def _install_cosyvoice_mocks(
     cosyvoice_pkg.cli = cli_pkg
     cli_pkg.cosyvoice = cosyvoice_mod
 
-    # 用主环境真实 torchaudio（torch 2.11 + torchaudio 2.11），便于归一化逻辑跑通
-    if torchaudio_load is None:
-        torchaudio.load = MagicMock(
-            return_value=(torch.zeros(1, 16000, dtype=torch.float32), 16000)
-        )
-    else:
-        torchaudio.load = torchaudio_load
+    # worker 不再调 torchaudio.load（路径透传），但推理成功仍走 torchaudio.save
     torchaudio.save = MagicMock()  # type: ignore[method-assign]
 
     monkeypatch.setitem(sys.modules, "cosyvoice", cosyvoice_pkg)
     monkeypatch.setitem(sys.modules, "cosyvoice.cli", cli_pkg)
     monkeypatch.setitem(sys.modules, "cosyvoice.cli.cosyvoice", cosyvoice_mod)
-    # 让 worker 内的 `import torchaudio` 拿到主环境真实模块（已被替换 load/save）
 
     return cosyvoice_mod, torchaudio
 
@@ -107,7 +102,9 @@ class TestWorkerReferenceAudioBranch:
         ref_wav.write_bytes(b"fake")
 
         sft_mock = MagicMock(return_value=iter([]))
-        cross_mock = MagicMock(return_value=iter([{"tts_speech": MagicMock(shape=(1, 22050))}]))
+        cross_mock = MagicMock(
+            return_value=iter([{"tts_speech": torch.randn(1, 22050, dtype=torch.float32)}])
+        )
         cosyvoice_mod, _ = _install_cosyvoice_mocks(
             monkeypatch,
             inference_sft=sft_mock,
@@ -130,6 +127,9 @@ class TestWorkerReferenceAudioBranch:
         assert exit_code == 0
         assert cross_mock.called, "inference_cross_lingual 应被调用"
         assert not sft_mock.called, "inference_sft 不应被调用"
+        # D60 hotfix #3：路径字符串应原样透传给 inference_cross_lingual 的第二个位置参数
+        prompt_wav_arg = cross_mock.call_args.args[1]
+        assert prompt_wav_arg == str(ref_wav), "应透传路径字符串，不是 tensor"
         # 验证结果
         assert any(line.get("type") == "done" and line.get("success_count") == 1 for line in lines)
 
@@ -139,7 +139,9 @@ class TestWorkerReferenceAudioBranch:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC6 测试 4：reference_audio="" → 走默认 SFT 路径（回归测试）。"""
-        sft_mock = MagicMock(return_value=iter([{"tts_speech": MagicMock(shape=(1, 22050))}]))
+        sft_mock = MagicMock(
+            return_value=iter([{"tts_speech": torch.randn(1, 22050, dtype=torch.float32)}])
+        )
         cross_mock = MagicMock(return_value=iter([]))
         _install_cosyvoice_mocks(
             monkeypatch,

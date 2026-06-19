@@ -49,6 +49,11 @@ class CosyVoiceEngine(TTSEngine):
         segments_dir = temp_dir / "segments"
         segments_dir.mkdir(parents=True, exist_ok=True)
 
+        # D60 hotfix #3: CosyVoice inference_cross_lingual 要求 prompt_wav 是文件路径，
+        # 且内部 torchaudio.load(soundfile 后端) 不支持 mp3/m4a 等格式。
+        # spawn worker 前用 ffmpeg 把任意格式参考音频 → 16kHz mono WAV 临时文件。
+        reference_audio_for_worker = self._prepare_reference_audio(temp_dir)
+
         task_segments: list[dict[str, object]] = [
             {
                 "index": seg.index,
@@ -62,7 +67,7 @@ class CosyVoiceEngine(TTSEngine):
             "model_path": self.config.model_path,
             "speaker": speaker,
             "speed": self.config.speed,
-            "reference_audio": self.config.reference_audio,
+            "reference_audio": reference_audio_for_worker,
             "segments": task_segments,
         }
 
@@ -153,6 +158,75 @@ class CosyVoiceEngine(TTSEngine):
             raise ImportError(f"Worker 脚本未找到: {_WORKER_SCRIPT}")
 
         return python_path, source_path
+
+    def _prepare_reference_audio(self, temp_dir: Path) -> str:
+        """把用户参考音频转成 CosyVoice cross_lingual 可读的 16kHz mono WAV。
+
+        CosyVoice 内部 `torchaudio.load(wav, backend='soundfile')` 只支持
+        wav/flac/ogg 等格式，不支持 mp3/m4a/aac。用户可能上传任意格式，
+        统一在主进程用 ffmpeg 预转换。
+
+        Args:
+            temp_dir: 管线临时目录，转换后的 wav 放在 temp_dir/reference_audio.wav。
+
+        Returns:
+            转换后 wav 的绝对路径字符串；若用户未配置参考音频，返回空字符串。
+        """
+        ref_path = self.config.reference_audio
+        if not ref_path:
+            return ""
+
+        src = Path(ref_path)
+        if not src.is_file():
+            raise PipelineError(
+                f"参考音频文件不存在: {ref_path}",
+                stage="TTS",
+                suggestion="请在配置面板重新选择参考音频文件",
+            )
+
+        out_wav = temp_dir / "reference_audio.wav"
+        # 已经是 16kHz mono WAV 且未变更 → 直接复用，避免重复转码
+        if out_wav.is_file():
+            logger.info("参考音频已转换，复用: %s", out_wav)
+            return str(out_wav)
+
+        cmd = [
+            "ffmpeg",
+            "-i",
+            str(src),
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-y",
+            str(out_wav),
+        ]
+        logger.info("参考音频转码 → 16kHz mono WAV: %s → %s", src, out_wav)
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        except FileNotFoundError as e:
+            raise PipelineError(
+                "ffmpeg 未找到，无法转换参考音频",
+                stage="TTS",
+                suggestion="请安装 ffmpeg 后重试",
+            ) from e
+
+        if result.returncode != 0:
+            stderr_text = result.stderr.decode("utf-8", errors="replace")[-500:]
+            raise PipelineError(
+                f"参考音频转码失败 (code={result.returncode}): {stderr_text}",
+                stage="TTS",
+                suggestion="请确认参考音频文件有效",
+            )
+
+        return str(out_wav)
 
     @staticmethod
     def _build_env(source_path: Path) -> dict[str, str]:

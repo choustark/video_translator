@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from src.config import ASRConfig, AppConfig, TranslationConfig, TTSConfig
+from src.config import AppConfig, ASRConfig, TranslationConfig, TTSConfig
 from src.pipeline import Pipeline
 from src.signals import PipelineSignals
 

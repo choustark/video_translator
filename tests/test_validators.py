@@ -9,6 +9,7 @@ import pytest
 
 from src.config import AppConfig, ASRConfig, TranslationConfig, TTSConfig
 from src.exceptions import ValidationError
+from src.utils.platform_utils import get_ffmpeg_install_hint
 from src.validators import (
     ValidationResult,
     validate_all,
@@ -56,7 +57,9 @@ class TestValidateFfmpeg:
         ):
             validate_ffmpeg()
         assert exc_info.value.stage == "ffmpeg"
-        assert "brew install ffmpeg" in exc_info.value.suggestion
+        # 提示中包含当前平台的安装命令（macOS=brew / Linux=apt / Windows=winget），
+        # 不硬编码以避免跨平台 CI 失败。
+        assert get_ffmpeg_install_hint() in exc_info.value.suggestion
 
     def test_fails_when_version_too_low(self) -> None:
         mock_result = MagicMock()

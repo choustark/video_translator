@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -5,6 +6,7 @@ import pytest
 from PySide6.QtWidgets import QPushButton
 
 from src.gui.main_window import MainWindow
+from src.utils.platform_utils import IS_MACOS
 
 
 @pytest.fixture
@@ -68,6 +70,10 @@ class TestOpenOutputButton:
         assert main_window._open_output_btn.objectName() == "secondaryButton"
         assert main_window._open_output_btn.text() == "打开输出目录"
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows 用 os.startfile 打开目录，不走 subprocess.run，无法用此 mock 验证",
+    )
     def test_creates_output_dir_on_click(self, main_window: MainWindow, tmp_path: Path) -> None:
         output_dir = tmp_path / "output"
         with (
@@ -76,7 +82,10 @@ class TestOpenOutputButton:
         ):
             main_window._open_output_btn.click()
             assert output_dir.exists()
-            mock_run.assert_called_once_with(["open", str(output_dir)], check=False)
+            # open_with_default_app 在 macOS 用 open、Linux 用 xdg-open，
+            # 都走 subprocess.run；Windows 走 os.startfile 已在上面 skip。
+            expected_cmd = "open" if IS_MACOS else "xdg-open"
+            mock_run.assert_called_once_with([expected_cmd, str(output_dir)], check=False)
 
     def test_creates_dir_if_not_exists(self, main_window: MainWindow, tmp_path: Path) -> None:
         output_dir = tmp_path / "nested" / "output"

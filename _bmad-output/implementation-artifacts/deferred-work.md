@@ -1,6 +1,6 @@
 # Deferred Work (v1 完成后清理)
 
-> 最后更新: 2026-06-13 (Epic 1-v2.0 retro: 补登记 CI workflow 推迟 + scheme_manager DEPRECATED)
+> 最后更新: 2026-06-19 (调研登记 D65-D69 翻译质量提升候选，基于 Denzel 演讲译文样本 + 竞品/学术调研)
 > 分类标准：v1.2 必做 / v1.2 可选 / v2.0+ / 已过期可丢弃
 
 ## Deferred from: code review of v2.0-3-1-d60-cosyvoice-voice-cloning (2026-06-14)
@@ -444,6 +444,139 @@ D55（删滑块）──→ D2（音频进度）──→ D20（FasterWhisper）
 **净减 ~215 行，零风险纯删除。**
 
 ---
+
+### D65-D69 — 翻译质量提升调研候选（v2.0 候选）
+
+| 属性 | 值 |
+|------|-----|
+| 来源 | Mr.ChouCj 翻译样本评估 + 竞品调研 (2026-06-19) |
+| 触发样本 | Denzel Washington Dillard University 毕业典礼演讲译文，发现 6+ 处问题（Court Theater → 法庭剧院、U-Haul 直译、第 100 行反义翻译、"扑通一声倒下"凭空多出、"宝贝""搞到"语气漂移等） |
+| 调研依据 | HeyGen / Rask / Perso AI 工业实践 + VideoDubber / LSST / SSPO 学术研究 + subtitle-translator 开源工程实践 + Whisper: Courtside Edition NER+ASR 二转 |
+| 状态 | **未实施，待 Mr.ChouCj 决策优先级** |
+
+按 ROI（投入产出比）排序的 5 项候选：
+
+#### D65 (P0) — 行数自检 + 批量拼接送翻译
+
+| 属性 | 值 |
+|------|-----|
+| 复杂度 | 低（1 天） |
+| ROI | 极高 |
+| 解决的样本问题 | "扑通一声倒下"凭空多出一行 |
+
+**做法（参考 subtitle-translator）：**
+1. 把多段字幕用 `\n` 拼接成一段送 LLM 翻译，让模型看上下文，再按分隔符拆回来
+2. 拆回来的行数必须等于原文行数，不等就报错重试（最多 N 次）
+3. 上下文窗口：每次送当前行 + 前 N 行 + 后 N 行作为 context（推荐 70B+ 模型）
+
+**代码影响：** `src/translation/` 现有 provider 链路重构为批量模式；新增行数校验逻辑
+
+---
+
+#### D66 (P0) — 翻译 prompt 加本土化 + 语气约束（few-shot）
+
+| 属性 | 值 |
+|------|-----|
+| 复杂度 | 低（半天，纯 prompt 工程） |
+| ROI | 高 |
+| 解决的样本问题 | "宝贝""搞到"语气漂移、"带不走的东西别太在意"生硬直译 |
+
+**做法：**
+1. 翻译 prompt 中显式约束："使用成人演讲语气，避免'宝贝''搞到'等俚俗词"
+2. 加 few-shot 示例（成功译文 + 失败译文各 2-3 个，标明为什么）
+3. 加本土化指令：英语典故（U-Haul behind a hearse）→ 中文等价意象，而非直译
+
+**代码影响：** `src/translation/{glm,deepseek,openai}_provider.py` 的 `_build_prompt()` 模板；prompt 文本可外置到 `src/translation/prompts/` 配置文件
+
+---
+
+#### D67 (P1) — ASR 二转 + LLM 自动专名提取
+
+| 属性 | 值 |
+|------|-----|
+| 复杂度 | 中（2-3 天） |
+| ROI | 中高 |
+| 解决的样本问题 | Court Theater → 法庭剧院（专名误识别导致的下游错误） |
+| 学术依据 | Whisper: Courtside Edition (ACL 2025)：NER agent + initial_prompt 二转，WER 相对降 17% |
+
+**做法（参考 Whisper Courtside 流水线）：**
+1. **第一遍** mlx-whisper 转写（现有逻辑）
+2. **NER agent**（GLM-4）从一转结果识别人名、地名、机构名、术语
+3. **归一化**到规范形式（拼写/大小写）
+4. **拼接成自然句子**注入 mlx-whisper 的 `initial_prompt` 参数
+5. **第二遍** mlx-whisper 重转写，专名准确率显著提升
+
+**与现有 D46/D59 的关系：** D46/D59 是"用户手动填专名表"，D67 是"LLM 自动提取"，二者可叠加（用户表 + 自动提取合并去重）
+
+**代码影响：**
+- 新增 `src/asr/proper_noun_extractor.py`（LLM 调用）
+- `src/asr/mlx_whisper_engine.py` 支持"二转"模式
+- 性能权衡：双倍 ASR 时间，长视频可能要可选开关
+
+---
+
+#### D68 (P1) — LLM self-check 关键句复译
+
+| 属性 | 值 |
+|------|-----|
+| 复杂度 | 中（2 天） |
+| ROI | 中 |
+| 解决的样本问题 | 第 100 行 "If you don't fail, you're not even trying" → 反义翻译 |
+| 学术依据 | TEaR framework / SC (arxiv 2025)：翻译 → 评 → 精炼 |
+
+**做法：**
+1. 翻译完成后，开**新会话**（清空 history，避免锚定效应）
+2. 让 LLM 对照原文逐句打分（准确度 1-5）
+3. 分数 ≤ 3 的句子触发复译，要求"找出原文与译文的语义偏差并修正"
+4. 警告（来自论文）：模型会过度纠错，仅对低分段触发复译而非全篇
+
+**成本：** 双倍 token 消耗（翻译 + 评分）。建议按段计费可控。
+
+**代码影响：** `src/translation/` 新增 verifier 模块；翻译流程从单次调用改为"翻译 + 抽查复译"两阶段
+
+---
+
+#### D69 (P2) — 多候选 length-aware 翻译 + 时长选优
+
+| 属性 | 值 |
+|------|-----|
+| 复杂度 | 较高（3-4 天） |
+| ROI | 中 |
+| 解决的样本问题 | 整体时长对齐问题（v1.1 已部分解决，但仍有局部偏差） |
+| 学术依据 | LSST (2025)：一次生成 short/normal/long 三候选 + duration model 估时长 + 选最优；VideoDubber (AAAI 2023)：token-level duration control |
+
+**做法：**
+1. LLM 一次生成 3 个候选译文（short / normal / long），每个标明预期时长
+2. 用 duration model（按字数 × 平均语速估算，不实际合成）估每个候选时长
+3. 选最贴近原文时长的候选进入下游 TTS
+4. 避免在翻译时硬塞时长约束（会降质量）
+
+**与 v1.1 现有方案的关系：** v1.1 的 D50 是"prompt 中加时长约束"（单一译文），D69 是"多候选 + 选优"——后者质量更高但成本翻倍
+
+**代码影响：** 翻译 API 调用结构改写（一次调用返回多候选）；下游 TTS 接收"选定的译文"而非"唯一译文"
+
+---
+
+### v2.0 翻译质量提升实施建议
+
+按 ROI 推荐顺序：
+```
+D65（行数自检，1天）──→ D66（prompt 约束，半天）
+       │                         │
+       └──── 解决 Denzel 样本 80% 问题 ────┘
+                  │
+            D67（ASR 二转，2-3天）── 治专名误识别
+                  │
+            D68（self-check，2天）── 治反义/严重错译
+                  │
+            D69（多候选时长，3-4天）── 提升对齐精度
+```
+
+**Mr.ChouCj 决策点：**
+- 是否单独创建 v2.0 翻译质量 story 包？（vs 散落到现有 story）
+- D65+D66 是否合并为一个 story（都是 prompt/批翻译层改动）？
+- D67 是否在 v2.0 主线 vs 留到 v3.0？（双倍 ASR 时间是性能权衡）
+- D69 是否值得做（与 v1.1 已实现的 D50 重叠度高）？
 
 ### v2.0 配套债务（从 v2.0+ 区块移入）
 

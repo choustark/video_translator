@@ -280,7 +280,7 @@ class MainWindow(QMainWindow):
 
         qss_path = Path(__file__).parent / "styles.qss"
         try:
-            qss_text = qss_path.read_text()
+            qss_text = qss_path.read_text('gbk', errors='ignore')
         except OSError:
             logger.warning("QSS file not readable: %s, using default styles", qss_path)
             return

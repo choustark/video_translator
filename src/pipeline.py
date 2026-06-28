@@ -117,8 +117,11 @@ class Pipeline:
                             completed_set.discard(stage)
                             self.states[stage].status = StageStatus.PENDING
 
-                    logger.info("断点续传 | 已完成 %s | 从 %s 继续",
-                                completed_set, checkpoint.get("current_stage"))
+                    logger.info(
+                        "断点续传 | 已完成 %s | 从 %s 继续",
+                        completed_set,
+                        checkpoint.get("current_stage"),
+                    )
 
             # 阶段 1: 音频提取
             if "音频提取" not in completed_set:
@@ -274,7 +277,10 @@ class Pipeline:
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def _write_checkpoint(
-        self, temp_dir: Path, completed: list[str], current: str,
+        self,
+        temp_dir: Path,
+        completed: list[str],
+        current: str,
         audio_path: Path | None = None,
     ) -> None:
         checkpoint_path = temp_dir / "checkpoint.json"
@@ -361,13 +367,16 @@ class Pipeline:
         """获取视频总时长，失败时返回 0（无进度模式）。"""
         try:
             from src.composer.ffmpeg_wrapper import FFmpegWrapper
+
             return FFmpegWrapper().get_video_duration(video_path)
         except Exception:
             logger.warning("音频提取 | 无法获取视频时长，进度将不可用")
             return 0.0
 
     def _read_ffmpeg_progress(
-        self, proc: subprocess.Popen[bytes], duration: float,
+        self,
+        proc: subprocess.Popen[bytes],
+        duration: float,
     ) -> list[str]:
         """逐行读取 ffmpeg stderr，解析进度并 emit 信号。返回 stderr 行供错误报告。"""
         start = time.monotonic()
@@ -405,11 +414,15 @@ class Pipeline:
         output_path = temp_dir / "audio.wav"
         cmd = [
             "ffmpeg",
-            "-i", str(video_path),
+            "-i",
+            str(video_path),
             "-vn",
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             "-y",
             str(output_path),
         ]
@@ -418,7 +431,9 @@ class Pipeline:
 
         try:
             proc = subprocess.Popen(
-                cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                cmd,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
             )
         except FileNotFoundError as e:
             raise PipelineError(
@@ -460,7 +475,8 @@ class Pipeline:
             self.signals.stage_progress.emit(event.stage, event.progress)
 
         preload_thread = threading.Thread(
-            target=self._preload_check_tts, daemon=True,
+            target=self._preload_check_tts,
+            daemon=True,
         )
         preload_thread.start()
 
@@ -549,11 +565,14 @@ class Pipeline:
                     tts_config = self.config.tts
                 else:
                     tts_config = TTSConfig(
-                        engine=engine_name, speed=self.config.tts.speed,
+                        engine=engine_name,
+                        speed=self.config.tts.speed,
                     )
                 engine = create_tts_engine(tts_config)
                 return engine.synthesize(
-                    segments, temp_dir, progress_callback,
+                    segments,
+                    temp_dir,
+                    progress_callback,
                     process_registry=self._active_processes,
                 )
             except (PipelineError, MemoryError, RuntimeError, ImportError) as e:
@@ -564,7 +583,9 @@ class Pipeline:
                 if fallback is not None:
                     logger.warning(
                         'TTS | DEGRADED | %s → %s | msg="%s"',
-                        engine_name, fallback, degraded_msg,
+                        engine_name,
+                        fallback,
+                        degraded_msg,
                     )
                     self.signals.tts_degraded.emit(engine_name, fallback)
                     engine_name = fallback
@@ -578,7 +599,9 @@ class Pipeline:
         )
 
     def _run_alignment(
-        self, segments: list[SubtitleSegment], temp_dir: Path,
+        self,
+        segments: list[SubtitleSegment],
+        temp_dir: Path,
     ) -> list[SubtitleSegment]:
         """语速自适应对齐 — ffmpeg atempo + 静音填充。"""
         from src.composer.speed_adapter import SpeedAdapter
@@ -594,8 +617,11 @@ class Pipeline:
         return segments
 
     def _compose(
-        self, video_path: Path, segments: list[SubtitleSegment],
-        temp_dir: Path, output_dir: Path,
+        self,
+        video_path: Path,
+        segments: list[SubtitleSegment],
+        temp_dir: Path,
+        output_dir: Path,
     ) -> Path:
         from src.composer.ffmpeg_wrapper import FFmpegWrapper
         from src.composer.subtitle_generator import SubtitleGenerator
@@ -622,7 +648,10 @@ class Pipeline:
 
         output_video_path = output_dir / f"{stem}_translated.mp4"
         wrapper.compose_video(
-            video_path, chinese_audio_path, srt_path, output_video_path,
+            video_path,
+            chinese_audio_path,
+            srt_path,
+            output_video_path,
             style_name=self.config.subtitle.style,
         )
         self.signals.stage_progress.emit("合成", 1.0)

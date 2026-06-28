@@ -39,7 +39,9 @@ def _make_500_response() -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 500
     resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "Server Error", request=MagicMock(), response=resp,
+        "Server Error",
+        request=MagicMock(),
+        response=resp,
     )
     return resp
 

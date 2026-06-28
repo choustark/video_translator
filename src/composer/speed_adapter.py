@@ -27,7 +27,9 @@ def _check_rubberband() -> bool:
     try:
         result = subprocess.run(
             ["ffmpeg", "-filters"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         _rubberband_available = "rubberband" in result.stdout
     except Exception:
@@ -110,11 +112,13 @@ class SpeedAdapter:
             self._check_deviation(seg, target_duration)
 
             if progress_callback:
-                progress_callback(ProgressEvent(
-                    stage="语速自适应",
-                    progress=processed / processable_total,
-                    message=f"正在对齐 {processed}/{processable_total}",
-                ))
+                progress_callback(
+                    ProgressEvent(
+                        stage="语速自适应",
+                        progress=processed / processable_total,
+                        message=f"正在对齐 {processed}/{processable_total}",
+                    )
+                )
 
         self._check_global_deviation(segments)
 
@@ -123,11 +127,13 @@ class SpeedAdapter:
         if skipped:
             summary += f"（跳过 {skipped} 段）"
         if progress_callback:
-            progress_callback(ProgressEvent(
-                stage="语速自适应",
-                progress=1.0,
-                message=summary,
-            ))
+            progress_callback(
+                ProgressEvent(
+                    stage="语速自适应",
+                    progress=1.0,
+                    message=summary,
+                )
+            )
 
         return segments
 
@@ -142,9 +148,18 @@ class SpeedAdapter:
         pad_before_ms = int(pad_total / 2 * 1000)
         filter_str = f"adelay={pad_before_ms}|{pad_before_ms},apad=whole_dur={target_duration:.3f}"
         cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
-            "-filter:a", filter_str,
-            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            filter_str,
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-acodec",
+            "pcm_s16le",
             str(output_path),
         ]
         self._run_ffmpeg(cmd)
@@ -155,17 +170,34 @@ class SpeedAdapter:
         else:
             filter_str = f"atempo={speed_ratio:.4f}"
         cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
-            "-filter:a", filter_str,
-            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            filter_str,
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-acodec",
+            "pcm_s16le",
             str(output_path),
         ]
         self._run_ffmpeg(cmd)
 
     def _copy(self, input_path: Path, output_path: Path) -> None:
         cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
-            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-acodec",
+            "pcm_s16le",
             str(output_path),
         ]
         self._run_ffmpeg(cmd)
@@ -207,7 +239,10 @@ class SpeedAdapter:
             if deviation > _SINGLE_DEVIATION_THRESHOLD:
                 logger.warning(
                     "对齐 | 偏差过大 | seg=%d target=%.3f actual=%.3f deviation=%.1f%%",
-                    seg.index, target_duration, actual, deviation * 100,
+                    seg.index,
+                    target_duration,
+                    actual,
+                    deviation * 100,
                 )
 
     def _check_global_deviation(self, segments: list[SubtitleSegment]) -> None:
@@ -223,5 +258,7 @@ class SpeedAdapter:
             if global_deviation > _GLOBAL_DEVIATION_THRESHOLD:
                 logger.warning(
                     "对齐 | 全局偏差 | total_actual=%.1f total_target=%.1f deviation=%.1f%%",
-                    total_actual, total_target, global_deviation * 100,
+                    total_actual,
+                    total_target,
+                    global_deviation * 100,
                 )

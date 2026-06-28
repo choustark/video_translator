@@ -28,9 +28,7 @@ def create_tts_engine(config: TTSConfig) -> TTSEngine:
         "edge-tts": EdgeTTSEngine,
         "chattts": ChatTTSEngine,
     }
-    available: dict[str, type[TTSEngine]] = {
-        k: v for k, v in engines.items() if v is not None
-    }
+    available: dict[str, type[TTSEngine]] = {k: v for k, v in engines.items() if v is not None}
     if config.engine not in available:
         names = ", ".join(available.keys()) or "无可用引擎"
         raise ConfigError(

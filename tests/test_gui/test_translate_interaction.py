@@ -27,9 +27,7 @@ class TestTranslateButton:
         main_window._on_video_loaded("not_a_path")  # type: ignore[arg-type]
         assert main_window._translate_btn.isEnabled() is False
 
-    def test_button_shows_translating_on_click(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_shows_translating_on_click(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._translate_btn.setEnabled(True)
         with patch("src.gui.main_window.validate_all") as mock_validate:
@@ -39,9 +37,7 @@ class TestTranslateButton:
         assert main_window._translate_btn.text() == "中止翻译"
         assert main_window._translate_btn.isEnabled() is True
 
-    def test_click_while_translating_triggers_abort(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_click_while_translating_triggers_abort(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._translating = True
         main_window._pipeline = MagicMock()
@@ -49,18 +45,14 @@ class TestTranslateButton:
         main_window._translate_btn.click()
         main_window._pipeline.abort.assert_called_once()
 
-    def test_button_restores_after_translate_done(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_restores_after_translate_done(self, main_window: MainWindow) -> None:
         main_window._translate_btn.setText("中止翻译")
         main_window._translating = True
         main_window._on_pipeline_finished()
         assert main_window._translate_btn.text() == "开始翻译"
         assert main_window._translate_btn.isEnabled() is False
 
-    def test_button_restores_enabled_when_video_exists(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_restores_enabled_when_video_exists(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._validation_passed = True
         main_window._on_video_loaded(Path("/test/video.mp4"))
@@ -76,9 +68,7 @@ class TestOpenOutputButton:
         assert main_window._open_output_btn.objectName() == "secondaryButton"
         assert main_window._open_output_btn.text() == "打开输出目录"
 
-    def test_creates_output_dir_on_click(
-        self, main_window: MainWindow, tmp_path: Path
-    ) -> None:
+    def test_creates_output_dir_on_click(self, main_window: MainWindow, tmp_path: Path) -> None:
         output_dir = tmp_path / "output"
         with (
             patch("src.gui.main_window.OUTPUT_DIR", output_dir),
@@ -88,9 +78,7 @@ class TestOpenOutputButton:
             assert output_dir.exists()
             mock_run.assert_called_once_with(["open", str(output_dir)], check=False)
 
-    def test_creates_dir_if_not_exists(
-        self, main_window: MainWindow, tmp_path: Path
-    ) -> None:
+    def test_creates_dir_if_not_exists(self, main_window: MainWindow, tmp_path: Path) -> None:
         output_dir = tmp_path / "nested" / "output"
         with (
             patch("src.gui.main_window.OUTPUT_DIR", output_dir),
@@ -99,9 +87,7 @@ class TestOpenOutputButton:
             main_window._open_output_btn.click()
             assert output_dir.exists()
 
-    def test_mkdir_failure_does_not_crash(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_mkdir_failure_does_not_crash(self, main_window: MainWindow) -> None:
         with (
             patch("src.gui.main_window.OUTPUT_DIR", Path("/nonexistent/output")),
             patch("subprocess.run", side_effect=OSError("permission denied")),
@@ -110,9 +96,7 @@ class TestOpenOutputButton:
 
 
 class TestVideoLoadedSignalIntegration:
-    def test_video_loaded_enables_button(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_video_loaded_enables_button(self, main_window: MainWindow) -> None:
         assert main_window._translate_btn.isEnabled() is False
 
         main_window._validation_passed = True

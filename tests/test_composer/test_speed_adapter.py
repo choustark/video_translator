@@ -132,9 +132,13 @@ class TestSpeedAdapterSkipSegments:
     def test_skips_segment_with_zero_duration(self, tmp_path: Path) -> None:
         adapter = SpeedAdapter()
         seg = SubtitleSegment(
-            index=0, start_time=0.0, end_time=2.0,
-            source_text="en", translated_text="zh",
-            audio_path=Path("/fake/0000.mp3"), audio_duration=0.0,
+            index=0,
+            start_time=0.0,
+            end_time=2.0,
+            source_text="en",
+            translated_text="zh",
+            audio_path=Path("/fake/0000.mp3"),
+            audio_duration=0.0,
         )
         segments = [seg]
 
@@ -179,7 +183,10 @@ class TestSpeedAdapterDeviation:
                 adapter.align(segments, tmp_path)
                 mock_logger.warning.assert_any_call(
                     "对齐 | 偏差过大 | seg=%d target=%.3f actual=%.3f deviation=%.1f%%",
-                    0, 1.0, 2.0, 100.0,
+                    0,
+                    1.0,
+                    2.0,
+                    100.0,
                 )
 
     def test_global_deviation_warning_logged(self, tmp_path: Path) -> None:
@@ -206,7 +213,9 @@ class TestSpeedAdapterFFmpegErrors:
 
         with patch(_FFMPEG) as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(
-                1, "ffmpeg", stderr=b"Invalid data",
+                1,
+                "ffmpeg",
+                stderr=b"Invalid data",
             )
             with pytest.raises(PipelineError, match="ffmpeg 对齐失败") as exc_info:
                 adapter.align(segments, tmp_path)

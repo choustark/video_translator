@@ -75,8 +75,10 @@ class MainWindow(QMainWindow):
         right_panel.setStyleSheet("QWidget#rightPanel { background: #FFFFFF; }")
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(
-            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
-            SPACING_CONTENT_MARGIN, SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
+            SPACING_CONTENT_MARGIN,
         )
         right_layout.setSpacing(SPACING_SM)
 
@@ -162,9 +164,7 @@ class MainWindow(QMainWindow):
             self._show_validation_failure_dialog(result.errors)
             return
 
-        logger.info(
-            "翻译启动: %s，预设: %s", video_path, config.preset
-        )
+        logger.info("翻译启动: %s，预设: %s", video_path, config.preset)
         self._translating = True
         self._translate_btn.setText("中止翻译")
         self._translate_btn.setEnabled(True)
@@ -252,8 +252,7 @@ class MainWindow(QMainWindow):
         left_focusable = [
             w
             for w in left_all
-            if isinstance(w, focusable_types)
-            and w.focusPolicy() != Qt.FocusPolicy.NoFocus
+            if isinstance(w, focusable_types) and w.focusPolicy() != Qt.FocusPolicy.NoFocus
         ]
 
         prev: QWidget | None = None
@@ -269,8 +268,7 @@ class MainWindow(QMainWindow):
             right_focusable = [
                 w
                 for w in right_all
-                if isinstance(w, focusable_types)
-                and w.focusPolicy() != Qt.FocusPolicy.NoFocus
+                if isinstance(w, focusable_types) and w.focusPolicy() != Qt.FocusPolicy.NoFocus
             ]
             for w in right_focusable:
                 if prev is not None:
@@ -338,4 +336,3 @@ class MainWindow(QMainWindow):
     def get_config(self) -> AppConfig:
         """返回当前面板配置的深拷贝（pydantic AppConfig 模型）"""
         return self._config_panel.get_config()
-

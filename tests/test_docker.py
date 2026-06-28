@@ -22,9 +22,7 @@ class TestDockerignore:
         assert DOCKERIGNORE_PATH.exists(), ".dockerignore must exist"
         text = DOCKERIGNORE_PATH.read_text(encoding="utf-8")
         return {
-            line.strip()
-            for line in text.splitlines()
-            if line.strip() and not line.startswith("#")
+            line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
         }
 
     def test_excludes_models(self, ignore_lines: set[str]) -> None:
@@ -119,9 +117,9 @@ class TestEntrypoint:
         return ENTRYPOINT_PATH.read_text(encoding="utf-8")
 
     def test_has_shebang(self, entrypoint_content: str) -> None:
-        assert entrypoint_content.startswith(
-            "#!/bin/bash"
-        ) or entrypoint_content.startswith("#!/usr/bin/env bash")
+        assert entrypoint_content.startswith("#!/bin/bash") or entrypoint_content.startswith(
+            "#!/usr/bin/env bash"
+        )
 
     def test_creates_output_dir(self, entrypoint_content: str) -> None:
         assert "output" in entrypoint_content and "mkdir" in entrypoint_content

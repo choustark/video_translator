@@ -17,14 +17,22 @@ class FFmpegWrapper:
     def get_video_duration(self, video_path: Path) -> float:
         """通过 ffprobe 获取视频时长（秒）。"""
         cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, timeout=30, check=True, text=True,
+                cmd,
+                capture_output=True,
+                timeout=30,
+                check=True,
+                text=True,
             )
             return float(result.stdout.strip())
         except subprocess.CalledProcessError as e:
@@ -60,9 +68,7 @@ class FFmpegWrapper:
     ) -> Path:
         """将多段中文音频按时间轴拼接为完整音轨，段间静音填充。"""
 
-        valid_segments = [
-            s for s in segments if s.audio_path and s.audio_duration > 0
-        ]
+        valid_segments = [s for s in segments if s.audio_path and s.audio_duration > 0]
         if not valid_segments:
             raise PipelineError(
                 "没有有效的音频段可供合成",
@@ -93,10 +99,20 @@ class FFmpegWrapper:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", str(concat_file),
-            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             str(output_path),
         ]
         self._run_ffmpeg(cmd, timeout=300)
@@ -117,18 +133,30 @@ class FFmpegWrapper:
             force_style = SUBTITLE_STYLES["classic_white"]
 
         escaped_srt = str(srt_path).replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
-        subtitle_filter = (
-            f"subtitles='{escaped_srt}'"
-            f":force_style='{force_style}'"
-        )
+        subtitle_filter = f"subtitles='{escaped_srt}':force_style='{force_style}'"
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video_path),
-            "-i", str(audio_path),
-            "-vf", subtitle_filter,
-            "-map", "0:v", "-map", "1:a",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "23",
-            "-c:a", "aac", "-b:a", "128k",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-i",
+            str(audio_path),
+            "-vf",
+            subtitle_filter,
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
             # 以最短流为准结束编码，防止音频比视频长时 ffmpeg 挂起
             "-shortest",
             str(output_path),
@@ -140,10 +168,20 @@ class FFmpegWrapper:
     def _create_silence(self, duration: float, output_path: Path) -> None:
         """生成指定时长的静音 WAV（16kHz 单声道 PCM）。"""
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
-            "-t", f"{duration:.3f}",
-            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono",
+            "-t",
+            f"{duration:.3f}",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             str(output_path),
         ]
         self._run_ffmpeg(cmd, timeout=30)

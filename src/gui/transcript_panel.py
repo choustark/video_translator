@@ -75,9 +75,7 @@ class TranscriptPanel(QWidget):
         else:
             self._asr_text = text
 
-        self._text_browser.setStyleSheet(
-            f"color: {COLOR_PRIMARY_TEXT}; font-size: {FONT_LABEL}pt;"
-        )
+        self._text_browser.setStyleSheet(f"color: {COLOR_PRIMARY_TEXT}; font-size: {FONT_LABEL}pt;")
         self._text_browser.setPlainText(text)
         sb = self._text_browser.verticalScrollBar()
         sb.setValue(sb.maximum())

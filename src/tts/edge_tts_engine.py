@@ -10,6 +10,7 @@ License: MIT License
 GitHub: https://github.com/rany2/edge-tts
 License: MIT License
 """
+
 from __future__ import annotations
 
 import logging
@@ -96,7 +97,10 @@ class EdgeTTSEngine(TTSEngine):
             rate_str = self._compute_rate(seg.translated_text, target_duration, base_rate_str)
             segment_progress = processed / processable_total
             self._synthesize_segment(
-                seg.translated_text, voice, rate_str, output_path,
+                seg.translated_text,
+                voice,
+                rate_str,
+                output_path,
                 progress_callback=progress_callback,
                 segment_progress=segment_progress,
             )
@@ -105,20 +109,26 @@ class EdgeTTSEngine(TTSEngine):
             seg.audio_duration = self._get_duration(output_path)
 
             if progress_callback:
-                progress_callback(ProgressEvent(
-                    stage="TTS",
-                    progress=segment_progress,
-                    message=f"正在合成 {processed}/{processable_total}",
-                ))
+                progress_callback(
+                    ProgressEvent(
+                        stage="TTS",
+                        progress=segment_progress,
+                        message=f"正在合成 {processed}/{processable_total}",
+                    )
+                )
 
         skipped = total - processable_total
         summary = f"合成完成 {processable_total}/{processable_total}"
         if skipped:
             summary += f"（跳过 {skipped} 段）"
         if progress_callback:
-            progress_callback(ProgressEvent(
-                stage="TTS", progress=1.0, message=summary,
-            ))
+            progress_callback(
+                ProgressEvent(
+                    stage="TTS",
+                    progress=1.0,
+                    message=summary,
+                )
+            )
 
         return segments
 
@@ -150,7 +160,10 @@ class EdgeTTSEngine(TTSEngine):
         """
         try:
             self._do_tts_call(
-                text, voice, rate, output_path,
+                text,
+                voice,
+                rate,
+                output_path,
                 progress_callback=progress_callback,
                 segment_progress=segment_progress,
             )
@@ -185,26 +198,34 @@ class EdgeTTSEngine(TTSEngine):
         segment_progress: float,
     ) -> Callable[[RetryCallState], None]:
         """构造 before_sleep 钩子，重试时上报"正在重试 (n/3)..."进度。"""
+
         def _before_sleep(retry_state: RetryCallState) -> None:
             attempt = retry_state.attempt_number
             logger.warning("TTS 重试 | attempt=%d/%d", attempt, _MAX_ATTEMPTS)
             if callback is None:
                 return
-            callback(ProgressEvent(
-                stage="TTS",
-                progress=segment_progress,
-                message=f"正在重试 ({attempt}/{_MAX_ATTEMPTS})...",
-            ))
+            callback(
+                ProgressEvent(
+                    stage="TTS",
+                    progress=segment_progress,
+                    message=f"正在重试 ({attempt}/{_MAX_ATTEMPTS})...",
+                )
+            )
+
         return _before_sleep
 
     def _execute_tts_request(
-        self, text: str, voice: str, rate: str, output_path: Path,
+        self,
+        text: str,
+        voice: str,
+        rate: str,
+        output_path: Path,
     ) -> None:
         """实际调用 Edge-TTS API；网络异常直接抛出由 tenacity 处理。"""
         try:
             communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate)
             communicate.save_sync(str(output_path))
-        except (_RETRYABLE_EXCEPTIONS):
+        except _RETRYABLE_EXCEPTIONS:
             raise
         except Exception as e:
             # 非网络异常：不可重试，立即包装为 PipelineError

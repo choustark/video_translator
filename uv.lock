@@ -1828,7 +1828,7 @@ dev = [
     { name = "mypy", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-asyncio" },
-    { name = "ruff" },
+    { name = "ruff", specifier = "==0.15.12" },
     { name = "types-psutil", specifier = ">=7.2.2.20260508" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260510" },
 ]

@@ -26,8 +26,7 @@ try:
     from pydub import AudioSegment
 except ImportError as e:
     raise ImportError(
-        f"ChatTTS 依赖未安装: {e}. "
-        "请运行: pip install ChatTTS torch torchaudio"
+        f"ChatTTS 依赖未安装: {e}. 请运行: pip install ChatTTS torch torchaudio"
     ) from e
 
 logger = logging.getLogger("video_translator")
@@ -82,11 +81,13 @@ class ChatTTSEngine(TTSEngine):
             if not seg.translated_text.strip():
                 completed += 1
                 if progress_callback:
-                    progress_callback(ProgressEvent(
-                        stage="TTS",
-                        progress=completed / total,
-                        message=f"TTS ChatTTS: {completed}/{total}",
-                    ))
+                    progress_callback(
+                        ProgressEvent(
+                            stage="TTS",
+                            progress=completed / total,
+                            message=f"TTS ChatTTS: {completed}/{total}",
+                        )
+                    )
                 continue
 
             output_path = output_dir / f"{seg.index:04d}.wav"
@@ -96,11 +97,13 @@ class ChatTTSEngine(TTSEngine):
             completed += 1
 
             if progress_callback:
-                progress_callback(ProgressEvent(
-                    stage="TTS",
-                    progress=completed / total,
-                    message=f"TTS ChatTTS: {completed}/{total}",
-                ))
+                progress_callback(
+                    ProgressEvent(
+                        stage="TTS",
+                        progress=completed / total,
+                        message=f"TTS ChatTTS: {completed}/{total}",
+                    )
+                )
 
         return segments
 

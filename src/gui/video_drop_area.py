@@ -232,7 +232,10 @@ class VideoDropArea(QFrame):
     def _on_select_file(self) -> None:
         filter_str = "视频文件 (*.mp4 *.mkv *.mov *.avi);;所有文件 (*)"
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择视频文件", str(Path.home()), filter_str,
+            self,
+            "选择视频文件",
+            str(Path.home()),
+            filter_str,
         )
         if not path:
             return
@@ -370,8 +373,7 @@ class VideoDropArea(QFrame):
             QMessageBox.warning(
                 self,
                 "视频文件已变更",
-                "检测到视频文件大小与上次翻译不一致，上次的翻译进度无法复用，"
-                "将从头开始。",
+                "检测到视频文件大小与上次翻译不一致，上次的翻译进度无法复用，将从头开始。",
             )
             shutil.rmtree(temp_dir, ignore_errors=True)
             logger.info("断点续传 | 视频已变更 | 已清理 %s", temp_dir)
@@ -450,9 +452,13 @@ class VideoDropArea(QFrame):
         try:
             result = subprocess.run(
                 [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
                     str(file_path),
                 ],
                 capture_output=True,

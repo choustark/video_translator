@@ -83,23 +83,30 @@ class GLMProvider(TranslationProvider):
             self._current_segment_idx = processed
             processed += 1
             seg.translated_text = self._translate_segment(
-                seg.source_text, seg.end_time - seg.start_time,
+                seg.source_text,
+                seg.end_time - seg.start_time,
             )
             if progress_callback:
-                progress_callback(ProgressEvent(
-                    stage="翻译",
-                    progress=processed / processable_total,
-                    message=f"正在翻译 {processed}/{processable_total}",
-                ))
+                progress_callback(
+                    ProgressEvent(
+                        stage="翻译",
+                        progress=processed / processable_total,
+                        message=f"正在翻译 {processed}/{processable_total}",
+                    )
+                )
 
         skipped = len(segments) - processable_total
         summary = f"翻译完成 {processable_total}/{processable_total}"
         if skipped:
             summary += f"（跳过 {skipped} 段）"
         if progress_callback:
-            progress_callback(ProgressEvent(
-                stage="翻译", progress=1.0, message=summary,
-            ))
+            progress_callback(
+                ProgressEvent(
+                    stage="翻译",
+                    progress=1.0,
+                    message=summary,
+                )
+            )
 
         return segments
 
@@ -126,11 +133,13 @@ class GLMProvider(TranslationProvider):
         if callback is None:
             return
         attempt = retry_state.attempt_number
-        callback(ProgressEvent(
-            stage="翻译",
-            progress=(self._current_segment_idx + 1) / self._total_segments,
-            message=f"正在重试 ({attempt}/3)...",
-        ))
+        callback(
+            ProgressEvent(
+                stage="翻译",
+                progress=(self._current_segment_idx + 1) / self._total_segments,
+                message=f"正在重试 ({attempt}/3)...",
+            )
+        )
 
     def _do_api_call(self, text: str, duration: float = 0.0) -> str:
         retrying = Retrying(
@@ -172,7 +181,8 @@ class GLMProvider(TranslationProvider):
             error_body = response.text[:200]
             logger.error(
                 "翻译 | API 4xx | status=%d | body=%s",
-                response.status_code, error_body,
+                response.status_code,
+                error_body,
             )
             raise PipelineError(
                 f"翻译 API 请求失败 ({response.status_code}): {error_body}",

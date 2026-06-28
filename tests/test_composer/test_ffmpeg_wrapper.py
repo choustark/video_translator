@@ -12,12 +12,19 @@ from src.models import SubtitleSegment
 
 
 def _seg(
-    index: int, start: float, end: float, translated: str = "",
-    audio_path: str = "", audio_duration: float = 0.0,
+    index: int,
+    start: float,
+    end: float,
+    translated: str = "",
+    audio_path: str = "",
+    audio_duration: float = 0.0,
 ) -> SubtitleSegment:
     return SubtitleSegment(
-        index=index, start_time=start, end_time=end,
-        source_text="en", translated_text=translated,
+        index=index,
+        start_time=start,
+        end_time=end,
+        source_text="en",
+        translated_text=translated,
         audio_path=Path(audio_path) if audio_path else Path(),
         audio_duration=audio_duration,
     )
@@ -95,8 +102,7 @@ class TestComposeChineseAudio:
 
         # Verify concat command was called
         concat_calls = [
-            c for c in mock_run.call_args_list
-            if "-f" in c[0][0] and "concat" in c[0][0]
+            c for c in mock_run.call_args_list if "-f" in c[0][0] and "concat" in c[0][0]
         ]
         assert len(concat_calls) == 1
         concat_cmd = concat_calls[0][0][0]
@@ -158,9 +164,7 @@ class TestComposeChineseAudio:
         output = tmp_path / "output.wav"
 
         with patch("src.composer.ffmpeg_wrapper.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.CalledProcessError(
-                1, "ffmpeg", stderr=b"error"
-            )
+            mock_run.side_effect = subprocess.CalledProcessError(1, "ffmpeg", stderr=b"error")
             with pytest.raises(PipelineError, match="合成"):
                 wrapper.compose_chinese_audio(segments, 5.0, tmp_path, output)
 

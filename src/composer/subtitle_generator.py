@@ -6,7 +6,6 @@ from src.models import SubtitleSegment
 
 
 class SubtitleGenerator:
-
     def generate_srt(self, segments: list[SubtitleSegment], output_path: Path) -> Path:
         """根据字幕段落列表生成 SRT 格式字幕文件。
 

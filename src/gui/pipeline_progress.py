@@ -155,8 +155,7 @@ class _StageRow(QWidget):
         self._time_label = QLabel("")
         self._time_label.setObjectName("stageTime")
         self._time_label.setStyleSheet(
-            f"color: {COLOR_SECONDARY_TEXT};"
-            f" font-size: {FONT_LABEL - 1}pt;"
+            f"color: {COLOR_SECONDARY_TEXT}; font-size: {FONT_LABEL - 1}pt;"
         )
         self._time_label.setFixedWidth(180)
         layout.addWidget(self._time_label)
@@ -173,9 +172,7 @@ class _StageRow(QWidget):
         object_name = f"stageRow_{self._stage_name}"
         self.setObjectName(object_name)
         if cfg["bg"]:
-            self.setStyleSheet(
-                f"#{object_name} {{ background: {cfg['bg']}; border-radius: 4px; }}"
-            )
+            self.setStyleSheet(f"#{object_name} {{ background: {cfg['bg']}; border-radius: 4px; }}")
         else:
             self.setStyleSheet("")
         bold = "font-weight: bold;" if status == "running" else "font-weight: normal;"

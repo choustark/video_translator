@@ -29,11 +29,18 @@ dependencies = [
 dev = [
     "pytest>=9.0",
     "pytest-asyncio",
-    "ruff",
+    "ruff==0.15.12",
     "mypy>=2.0",
     "types-pyyaml>=6.0.12.20260510",
     "types-psutil>=7.2.2.20260508",
 ]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# E: pycodestyle errors, F: pyflakes, I: isort, W: pycodestyle warnings
+select = ["E", "F", "I", "W"]
 
 [tool.mypy]
 python_version = "3.13"

@@ -110,6 +110,7 @@ class TestSchemeManagerExport:
         manager.export_scheme("leaky", target)
 
         from src.config import load_config as load_yaml
+
         exported = load_yaml(target)
         assert exported.translation.api_key == ""
 

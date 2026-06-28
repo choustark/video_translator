@@ -21,8 +21,11 @@ def _make_config(**overrides) -> TTSConfig:
 def _make_segments(*texts: str) -> list[SubtitleSegment]:
     return [
         SubtitleSegment(
-            index=i, start_time=float(i), end_time=float(i + 1),
-            source_text="en", translated_text=t,
+            index=i,
+            start_time=float(i),
+            end_time=float(i + 1),
+            source_text="en",
+            translated_text=t,
         )
         for i, t in enumerate(texts)
     ]
@@ -58,7 +61,9 @@ class TestEdgeTTSSynthesize:
         with _patch_tts(3.0) as stack:
             engine.synthesize(segments, tmp_path)
             stack.mock_comm.assert_called_once_with(
-                text="你好世界", voice="zh-CN-YunxiNeural", rate="+0%",
+                text="你好世界",
+                voice="zh-CN-YunxiNeural",
+                rate="+0%",
             )
             stack.mock_comm.return_value.save_sync.assert_called_once()
 
@@ -187,13 +192,10 @@ class TestEdgeTTSErrorHandling:
         segments = _make_segments("你好")
 
         mock_comm_instance = MagicMock()
-        mock_comm_instance.save_sync.side_effect = (
-            _edge_tts.exceptions.NoAudioReceived("no audio")
-        )
+        mock_comm_instance.save_sync.side_effect = _edge_tts.exceptions.NoAudioReceived("no audio")
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
             patch("src.tts.edge_tts_engine.wait_exponential", return_value=lambda *_a, **_kw: 0),
         ):
             with pytest.raises(PipelineError, match="已重试 3 次") as exc_info:
@@ -210,13 +212,10 @@ class TestEdgeTTSErrorHandling:
         segments = _make_segments("你好")
 
         mock_comm_instance = MagicMock()
-        mock_comm_instance.save_sync.side_effect = (
-            _edge_tts.exceptions.WebSocketError("ws error")
-        )
+        mock_comm_instance.save_sync.side_effect = _edge_tts.exceptions.WebSocketError("ws error")
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
             patch("src.tts.edge_tts_engine.wait_exponential", return_value=lambda *_a, **_kw: 0),
         ):
             with pytest.raises(PipelineError, match="已重试 3 次") as exc_info:
@@ -295,10 +294,11 @@ class TestEdgeTTSRetry:
         ]
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
-            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
-                  return_value=_mock_audio_duration(2.0)),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
+            patch(
+                "src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                return_value=_mock_audio_duration(2.0),
+            ),
             _no_wait(),
         ):
             engine.synthesize(segments, tmp_path)
@@ -321,10 +321,11 @@ class TestEdgeTTSRetry:
         ]
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
-            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
-                  return_value=_mock_audio_duration(2.0)),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
+            patch(
+                "src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                return_value=_mock_audio_duration(2.0),
+            ),
             _no_wait(),
         ):
             engine.synthesize(segments, tmp_path)
@@ -340,8 +341,7 @@ class TestEdgeTTSRetry:
         mock_comm_instance = MagicMock()
         mock_comm_instance.save_sync.side_effect = RuntimeError("unexpected")
 
-        with patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                   return_value=mock_comm_instance):
+        with patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance):
             with pytest.raises(PipelineError, match="合成失败"):
                 engine.synthesize(segments, tmp_path)
 
@@ -368,10 +368,11 @@ class TestEdgeTTSRetry:
         ]
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
-            patch("src.tts.edge_tts_engine.AudioSegment.from_mp3",
-                  return_value=_mock_audio_duration(2.0)),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
+            patch(
+                "src.tts.edge_tts_engine.AudioSegment.from_mp3",
+                return_value=_mock_audio_duration(2.0),
+            ),
             _no_wait(),
             pytest.raises(PipelineError, match="已重试"),
         ):
@@ -405,13 +406,12 @@ class TestEdgeTTSRetry:
         segments = _make_segments("你好")
 
         mock_comm_instance = MagicMock()
-        mock_comm_instance.save_sync.side_effect = (
-            _edge_tts.exceptions.NoAudioReceived("always fail")
+        mock_comm_instance.save_sync.side_effect = _edge_tts.exceptions.NoAudioReceived(
+            "always fail"
         )
 
         with (
-            patch("src.tts.edge_tts_engine.edge_tts.Communicate",
-                  return_value=mock_comm_instance),
+            patch("src.tts.edge_tts_engine.edge_tts.Communicate", return_value=mock_comm_instance),
             patch("src.tts.edge_tts_engine.wait_exponential") as mock_wait,
             patch("src.tts.edge_tts_engine.stop_after_attempt") as mock_stop,
             patch("src.tts.edge_tts_engine.retry_if_exception_type") as mock_retry_if,

@@ -46,7 +46,8 @@ class TestOpenWithDefaultApp:
         ):
             open_with_default_app("/some/path")
             mock_subprocess.run.assert_called_once_with(
-                ["open", "/some/path"], check=False,
+                ["open", "/some/path"],
+                check=False,
             )
 
     def test_windows_calls_startfile(self) -> None:
@@ -68,10 +69,14 @@ class TestOpenWithDefaultApp:
         ):
             open_with_default_app("/some/path")
             mock_subprocess.run.assert_called_once_with(
-                ["xdg-open", "/some/path"], check=False,
+                ["xdg-open", "/some/path"],
+                check=False,
             )
 
     def test_accepts_path_object(self) -> None:
+        # Path 对象在 Windows 上 str() 化时，pathlib 会把 / 转成 \
+        # 因此期望值也用 str(Path(...)) 跟随平台规范，避免硬编码分隔符导致跨平台 CI 失败
+        expected_path = str(Path("/some/path"))
         with (
             patch("src.utils.platform_utils.IS_MACOS", True),
             patch("src.utils.platform_utils.IS_WINDOWS", False),
@@ -79,7 +84,8 @@ class TestOpenWithDefaultApp:
         ):
             open_with_default_app(Path("/some/path"))
             mock_subprocess.run.assert_called_once_with(
-                ["open", "/some/path"], check=False,
+                ["open", expected_path],
+                check=False,
             )
 
 

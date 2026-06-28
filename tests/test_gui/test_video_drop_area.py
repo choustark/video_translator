@@ -308,8 +308,9 @@ class TestFfprobeDurationExtraction:
         mock_result.returncode = 1
         mock_result.stderr = "Invalid data found"
 
-        with patch("subprocess.run", return_value=mock_result), patch(
-            "shutil.which", return_value="/usr/local/bin/ffprobe"
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("shutil.which", return_value="/usr/local/bin/ffprobe"),
         ):
             with pytest.raises(RuntimeError, match="ffprobe 失败"):
                 VideoDropArea._get_video_duration(Path("/test/video.mp4"))
@@ -448,9 +449,7 @@ class TestCheckForResume:
             "completed_stages": ["音频提取", "ASR"],
             "current_stage": "翻译",
         }
-        (temp_dir / "checkpoint.json").write_text(
-            json.dumps(checkpoint), encoding="utf-8"
-        )
+        (temp_dir / "checkpoint.json").write_text(json.dumps(checkpoint), encoding="utf-8")
         return temp_dir
 
     def test_video_size_mismatch_cleans_temp_dir(self, qapp, tmp_path: Path) -> None:
@@ -464,9 +463,11 @@ class TestCheckForResume:
         temp_dir = self._write_checkpoint(output_dir, video, recorded_size=99999)
 
         area = VideoDropArea()
-        with patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir), \
-             patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning, \
-             patch("src.gui.video_drop_area.QMessageBox.question") as mock_question:
+        with (
+            patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir),
+            patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning,
+            patch("src.gui.video_drop_area.QMessageBox.question") as mock_question,
+        ):
             area._check_for_resume(video)
 
         assert area.resume_requested is False
@@ -474,9 +475,7 @@ class TestCheckForResume:
         assert not mock_question.called  # 不应弹主询问
         assert not temp_dir.exists()  # 旧检查点被清理
 
-    def test_config_hash_mismatch_user_declines_cleans_temp_dir(
-        self, qapp, tmp_path: Path
-    ) -> None:
+    def test_config_hash_mismatch_user_declines_cleans_temp_dir(self, qapp, tmp_path: Path) -> None:
         """异常流程 B：config_hash 不匹配，用户选 No → 清理 temp_dir。"""
         from PySide6.QtWidgets import QMessageBox
 
@@ -497,9 +496,11 @@ class TestCheckForResume:
         )
         area.set_config_provider(lambda: config)
 
-        with patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir), \
-             patch("src.gui.video_drop_area.QMessageBox.question") as mock_question, \
-             patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning:
+        with (
+            patch("src.gui.video_drop_area.OUTPUT_DIR", output_dir),
+            patch("src.gui.video_drop_area.QMessageBox.question") as mock_question,
+            patch("src.gui.video_drop_area.QMessageBox.warning") as mock_warning,
+        ):
             mock_question.return_value = QMessageBox.StandardButton.No
             area._check_for_resume(video)
 

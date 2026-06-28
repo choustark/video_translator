@@ -114,9 +114,7 @@ class TestStageManagement:
     def test_complete_stage_emits_signal(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
         completed: list[tuple[str, float]] = []
-        pipeline.signals.stage_completed.connect(
-            lambda name, dur: completed.append((name, dur))
-        )
+        pipeline.signals.stage_completed.connect(lambda name, dur: completed.append((name, dur)))
 
         pipeline._start_stage("ASR")
         pipeline._complete_stage("ASR")
@@ -129,9 +127,7 @@ class TestStageManagement:
     def test_fail_stage_emits_signal(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
         failed: list[tuple[str, str]] = []
-        pipeline.signals.stage_failed.connect(
-            lambda name, err: failed.append((name, err))
-        )
+        pipeline.signals.stage_failed.connect(lambda name, err: failed.append((name, err)))
 
         pipeline._fail_stage("TTS", "OOM")
 
@@ -384,9 +380,7 @@ class TestProcess:
         output_dir.mkdir()
 
         finished_emitted: list[None] = []
-        pipeline.signals.pipeline_finished.connect(
-            lambda: finished_emitted.append(None)
-        )
+        pipeline.signals.pipeline_finished.connect(lambda: finished_emitted.append(None))
 
         mock_engine = MagicMock()
         mock_engine.transcribe.return_value = [
@@ -446,9 +440,7 @@ class TestProcess:
         output_dir.mkdir()
 
         finished_emitted: list[None] = []
-        pipeline.signals.pipeline_finished.connect(
-            lambda: finished_emitted.append(None)
-        )
+        pipeline.signals.pipeline_finished.connect(lambda: finished_emitted.append(None))
 
         mock_popen = _make_mock_popen(side_effect=FileNotFoundError("no ffmpeg"))
 
@@ -467,9 +459,7 @@ class TestProcess:
         output_dir.mkdir()
 
         failed: list[tuple[str, str]] = []
-        pipeline.signals.stage_failed.connect(
-            lambda name, err: failed.append((name, err))
-        )
+        pipeline.signals.stage_failed.connect(lambda name, err: failed.append((name, err)))
 
         mock_popen = _make_mock_popen(
             stderr_lines=[b"frame=  30 time=00:00:01.00\n"],
@@ -486,7 +476,9 @@ class TestProcess:
         assert failed[0][0] == "ASR"
 
     def test_success_cleans_up_temp_dir(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """AC5: 管线成功完成后自动删除临时目录。"""
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
@@ -591,7 +583,9 @@ class TestProcess:
 
 class TestStart:
     def test_spawns_thread_and_finishes(
-        self, tmp_path: Path, qapp,
+        self,
+        tmp_path: Path,
+        qapp,
     ) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
         video = tmp_path / "input.mp4"
@@ -695,12 +689,18 @@ class TestRunTranslation:
         mock_provider = MagicMock()
         translated = [
             SubtitleSegment(
-                index=0, start_time=0.0, end_time=1.0,
-                source_text="Hello", translated_text="你好",
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hello",
+                translated_text="你好",
             ),
             SubtitleSegment(
-                index=1, start_time=1.0, end_time=2.0,
-                source_text="World", translated_text="世界",
+                index=1,
+                start_time=1.0,
+                end_time=2.0,
+                source_text="World",
+                translated_text="世界",
             ),
         ]
         mock_provider.translate.return_value = translated
@@ -720,8 +720,11 @@ class TestRunTranslation:
         mock_provider = MagicMock()
         mock_provider.translate.return_value = [
             SubtitleSegment(
-                index=0, start_time=0.0, end_time=1.0,
-                source_text="Hello", translated_text="你好",
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hello",
+                translated_text="你好",
             ),
         ]
 
@@ -747,11 +750,17 @@ class TestRunTranslation:
         def fake_translate(segs, cb=None):
             if cb:
                 from src.models import ProgressEvent
+
                 cb(ProgressEvent(stage="翻译", progress=1.0, message="正在翻译 1/1"))
-            return [SubtitleSegment(
-                index=0, start_time=0.0, end_time=1.0,
-                source_text="Hi", translated_text="嗨",
-            )]
+            return [
+                SubtitleSegment(
+                    index=0,
+                    start_time=0.0,
+                    end_time=1.0,
+                    source_text="Hi",
+                    translated_text="嗨",
+                )
+            ]
 
         mock_provider = MagicMock()
         mock_provider.translate.side_effect = fake_translate
@@ -769,8 +778,11 @@ class TestRunTTS:
         pipeline._tts_ready_event.set()
         segments = [
             SubtitleSegment(
-                index=0, start_time=0.0, end_time=1.0,
-                source_text="Hello", translated_text="你好",
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hello",
+                translated_text="你好",
             ),
         ]
 
@@ -791,10 +803,15 @@ class TestRunTTS:
     def test_tts_emits_stage_progress(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         progress_events: list[tuple[str, float]] = []
         pipeline.signals.stage_progress.connect(
@@ -804,6 +821,7 @@ class TestRunTTS:
         def fake_synthesize(segs, td, cb=None, **kw):
             if cb:
                 from src.models import ProgressEvent
+
                 cb(ProgressEvent(stage="TTS", progress=1.0, message="正在合成 1/1"))
             return segs
 
@@ -821,10 +839,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -839,7 +862,8 @@ class TestRunTTS:
             if cfg.engine == "cosyvoice":
                 mock_engine = MagicMock()
                 mock_engine.synthesize.side_effect = PipelineError(
-                    "CosyVoice 未安装", stage="TTS",
+                    "CosyVoice 未安装",
+                    stage="TTS",
                 )
                 return mock_engine
             # ChatTTS fallback succeeds
@@ -859,10 +883,15 @@ class TestRunTTS:
         config.tts.engine = "edge-tts"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         mock_engine = MagicMock()
         mock_engine.synthesize.side_effect = PipelineError("TTS 合成失败", stage="TTS")
@@ -876,10 +905,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         # Leave _tts_ready_event unset (simulates preload stuck)
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         with (
             patch.object(pipeline._tts_ready_event, "wait", return_value=False),
@@ -893,10 +927,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -926,10 +965,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -958,10 +1002,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -990,10 +1039,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -1021,10 +1075,15 @@ class TestRunTTS:
         config.tts.engine = "cosyvoice"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -1054,10 +1113,15 @@ class TestRunTTS:
         config.tts.engine = "edge-tts"
         pipeline = Pipeline(config, PipelineSignals())
         pipeline._tts_ready_event.set()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=1.0,
-            source_text="Hi", translated_text="嗨",
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=1.0,
+                source_text="Hi",
+                translated_text="嗨",
+            )
+        ]
 
         degraded_signals: list[tuple[str, str]] = []
         pipeline.signals.tts_degraded.connect(
@@ -1077,12 +1141,17 @@ class TestRunTTS:
 class TestRunAlignment:
     def test_alignment_overwrites_audio_path(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=2.0,
-            source_text="Hi", translated_text="嗨",
-            audio_path=tmp_path / "segments" / "0000.mp3",
-            audio_duration=1.5,
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=2.0,
+                source_text="Hi",
+                translated_text="嗨",
+                audio_path=tmp_path / "segments" / "0000.mp3",
+                audio_duration=1.5,
+            )
+        ]
 
         def fake_align(segs, td, cb=None):
             segs[0].audio_path = td / "aligned" / "0000.wav"
@@ -1100,12 +1169,17 @@ class TestRunAlignment:
 
     def test_alignment_emits_stage_progress(self, tmp_path: Path) -> None:
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=2.0,
-            source_text="Hi", translated_text="嗨",
-            audio_path=tmp_path / "segments" / "0000.mp3",
-            audio_duration=1.5,
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=2.0,
+                source_text="Hi",
+                translated_text="嗨",
+                audio_path=tmp_path / "segments" / "0000.mp3",
+                audio_duration=1.5,
+            )
+        ]
 
         progress_events: list[tuple[str, float]] = []
         pipeline.signals.stage_progress.connect(
@@ -1115,6 +1189,7 @@ class TestRunAlignment:
         def fake_align(segs, td, cb=None):
             if cb:
                 from src.models import ProgressEvent
+
                 cb(ProgressEvent(stage="语速自适应", progress=1.0, message="正在对齐 1/1"))
             return segs
 
@@ -1137,12 +1212,17 @@ class TestRunCompose:
         temp_dir.mkdir()
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=2.0,
-            source_text="Hello", translated_text="你好",
-            audio_path=temp_dir / "aligned" / "0000.wav",
-            audio_duration=2.0,
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=2.0,
+                source_text="Hello",
+                translated_text="你好",
+                audio_path=temp_dir / "aligned" / "0000.wav",
+                audio_duration=2.0,
+            )
+        ]
 
         with (
             patch("src.composer.subtitle_generator.SubtitleGenerator") as mock_srt_cls,
@@ -1178,12 +1258,17 @@ class TestRunCompose:
         temp_dir.mkdir()
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        segments = [SubtitleSegment(
-            index=0, start_time=0.0, end_time=2.0,
-            source_text="Hello", translated_text="你好",
-            audio_path=temp_dir / "aligned" / "0000.wav",
-            audio_duration=2.0,
-        )]
+        segments = [
+            SubtitleSegment(
+                index=0,
+                start_time=0.0,
+                end_time=2.0,
+                source_text="Hello",
+                translated_text="你好",
+                audio_path=temp_dir / "aligned" / "0000.wav",
+                audio_duration=2.0,
+            )
+        ]
 
         progress_events: list[tuple[str, float]] = []
         pipeline.signals.stage_progress.connect(
@@ -1220,9 +1305,7 @@ class TestRunCompose:
 class TestCheckpoint:
     """断点续传检查点测试（spec 测试策略要求 7 个 pipeline 测试）。"""
 
-    def _setup_pipeline_with_video(
-        self, tmp_path: Path
-    ) -> tuple[Pipeline, Path, Path, Path]:
+    def _setup_pipeline_with_video(self, tmp_path: Path) -> tuple[Pipeline, Path, Path, Path]:
         """构造一个带有真实视频文件的 Pipeline + temp_dir。"""
         pipeline = Pipeline(_make_config(tmp_path), PipelineSignals())
         video = tmp_path / "test.mp4"
@@ -1244,9 +1327,7 @@ class TestCheckpoint:
         (temp_dir / "checkpoint.json").write_text("{not valid json", encoding="utf-8")
         assert pipeline._load_checkpoint(temp_dir) is None
 
-    def test_load_checkpoint_returns_none_when_video_size_mismatch(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_checkpoint_returns_none_when_video_size_mismatch(self, tmp_path: Path) -> None:
         """异常流程 A：video_size 不匹配，返回 None。"""
         pipeline, video, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
         pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
@@ -1254,9 +1335,7 @@ class TestCheckpoint:
         video.write_text("different content with different size")
         assert pipeline._load_checkpoint(temp_dir) is None
 
-    def test_load_checkpoint_returns_none_when_config_hash_mismatch(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_checkpoint_returns_none_when_config_hash_mismatch(self, tmp_path: Path) -> None:
         """异常流程 B：config_hash 不匹配，返回 None。"""
         pipeline, _, _, temp_dir = self._setup_pipeline_with_video(tmp_path)
         pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
@@ -1282,12 +1361,14 @@ class TestCheckpoint:
         pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
         # 故意不创建 segments_checkpoint.json
 
-        with patch.object(pipeline, "_extract_audio") as mock_extract, \
-             patch.object(pipeline, "_run_asr") as mock_asr, \
-             patch.object(pipeline, "_run_translation") as mock_trans, \
-             patch.object(pipeline, "_run_tts") as mock_tts, \
-             patch.object(pipeline, "_run_alignment") as mock_align, \
-             patch.object(pipeline, "_compose"):
+        with (
+            patch.object(pipeline, "_extract_audio") as mock_extract,
+            patch.object(pipeline, "_run_asr") as mock_asr,
+            patch.object(pipeline, "_run_translation") as mock_trans,
+            patch.object(pipeline, "_run_tts") as mock_tts,
+            patch.object(pipeline, "_run_alignment") as mock_align,
+            patch.object(pipeline, "_compose"),
+        ):
             mock_extract.return_value = temp_dir / "audio.wav"
             (temp_dir / "audio.wav").write_text("fake audio")
             mock_asr.return_value = []
@@ -1311,6 +1392,7 @@ class TestCheckpoint:
 
         # 模拟时间流逝（保证 updated_at 不同）
         import time as _time
+
         _time.sleep(0.01)
         pipeline._write_checkpoint(temp_dir, ["音频提取", "ASR"], "翻译")
         second_data = json.loads((temp_dir / "checkpoint.json").read_text(encoding="utf-8"))

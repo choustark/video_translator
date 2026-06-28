@@ -10,6 +10,7 @@ License: MIT License
 GitHub: https://github.com/guillaumekln/faster-whisper
 License: MIT License
 """
+
 from __future__ import annotations
 
 import gc
@@ -54,7 +55,8 @@ class FasterWhisperEngine(ASREngine):
 
         logger.info(
             "ASR | 开始 | audio=%s, model=%s, device=cpu, compute_type=int8",
-            audio_path, self.config.model_path
+            audio_path,
+            self.config.model_path,
         )
 
         try:
@@ -90,18 +92,22 @@ class FasterWhisperEngine(ASREngine):
             text = seg.text.strip()
             if not text:
                 continue
-            segments.append(SubtitleSegment(
-                index=len(segments),
-                start_time=seg.start,
-                end_time=seg.end,
-                source_text=text,
-            ))
+            segments.append(
+                SubtitleSegment(
+                    index=len(segments),
+                    start_time=seg.start,
+                    end_time=seg.end,
+                    source_text=text,
+                )
+            )
             if progress_callback and duration > 0:
-                progress_callback(ProgressEvent(
-                    stage="ASR",
-                    progress=min(seg.end / duration, 1.0),
-                    message=f"已识别 {len(segments)} 段",
-                ))
+                progress_callback(
+                    ProgressEvent(
+                        stage="ASR",
+                        progress=min(seg.end / duration, 1.0),
+                        message=f"已识别 {len(segments)} 段",
+                    )
+                )
 
         segments = _apply_proper_noun_replacements(segments, all_nouns)
         segments = _merge_short_segments(segments)

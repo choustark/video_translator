@@ -16,8 +16,13 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import torch
-import torchaudio
+
+# torch / torchaudio 是 CosyVoice worker 的运行时依赖，主 venv 不装（CosyVoice 走 conda 子进程）。
+# 用 importorskip 让"无 torch 环境"（Linux/Windows CI）在 collection 阶段直接 SKIP 整个文件，
+# 而不是 ModuleNotFoundError 中断整个 pytest（exit code 2）。
+# 注意：CI 的 -k "not cosyvoice" 是执行阶段的过滤器，无法阻止 collection 阶段的 import 失败。
+torch = pytest.importorskip("torch")
+torchaudio = pytest.importorskip("torchaudio")
 
 
 def _install_cosyvoice_mocks(

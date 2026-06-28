@@ -23,8 +23,11 @@ from src.models import SubtitleSegment
 def _make_segments(count: int, *, empty_last: bool = False) -> list[SubtitleSegment]:
     segs = [
         SubtitleSegment(
-            index=i, start_time=i * 2.0, end_time=i * 2.0 + 1.5,
-            source_text=f"hello {i}", translated_text=f"你好 {i}",
+            index=i,
+            start_time=i * 2.0,
+            end_time=i * 2.0 + 1.5,
+            source_text=f"hello {i}",
+            translated_text=f"你好 {i}",
         )
         for i in range(count)
     ]
@@ -73,7 +76,9 @@ def _make_fake_chattts() -> ModuleType:
             return "fake_speaker"
 
         def infer(
-            self, texts: list[str], params_infer_code: object | None = None,
+            self,
+            texts: list[str],
+            params_infer_code: object | None = None,
         ) -> list[np.ndarray]:
             return [np.random.randn(24000).astype(np.float32)]
 
@@ -139,8 +144,10 @@ class TestSynthesize:
     def test_synthesize_fills_audio_path_and_duration(self, chattts_env) -> None:
         engine, tmp_path = chattts_env
 
-        with patch("src.tts.chattts_engine.torchaudio") as mock_ta, \
-             patch("src.tts.chattts_engine.AudioSegment") as mock_as:
+        with (
+            patch("src.tts.chattts_engine.torchaudio") as mock_ta,
+            patch("src.tts.chattts_engine.AudioSegment") as mock_as,
+        ):
             mock_ta.save = _write_stub_wav
             mock_seg = MagicMock()
             mock_seg.__len__ = MagicMock(return_value=1000)
@@ -157,8 +164,10 @@ class TestSynthesize:
     def test_skips_empty_text_segments(self, chattts_env) -> None:
         engine, tmp_path = chattts_env
 
-        with patch("src.tts.chattts_engine.torchaudio") as mock_ta, \
-             patch("src.tts.chattts_engine.AudioSegment") as mock_as:
+        with (
+            patch("src.tts.chattts_engine.torchaudio") as mock_ta,
+            patch("src.tts.chattts_engine.AudioSegment") as mock_as,
+        ):
             mock_ta.save = _write_stub_wav
             mock_seg = MagicMock()
             mock_seg.__len__ = MagicMock(return_value=500)
@@ -173,8 +182,10 @@ class TestSynthesize:
     def test_progress_callback(self, chattts_env) -> None:
         engine, tmp_path = chattts_env
 
-        with patch("src.tts.chattts_engine.torchaudio") as mock_ta, \
-             patch("src.tts.chattts_engine.AudioSegment") as mock_as:
+        with (
+            patch("src.tts.chattts_engine.torchaudio") as mock_ta,
+            patch("src.tts.chattts_engine.AudioSegment") as mock_as,
+        ):
             mock_ta.save = _write_stub_wav
             mock_seg = MagicMock()
             mock_seg.__len__ = MagicMock(return_value=800)
@@ -277,6 +288,7 @@ class TestImportGuard:
         try:
             with pytest.raises(ImportError, match="ChatTTS"):
                 import src.tts.chattts_engine as mod
+
                 importlib.reload(mod)
         finally:
             sys.modules.pop("ChatTTS", None)

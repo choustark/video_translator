@@ -45,9 +45,7 @@ class TestStatusIcons:
             assert icon.height() == 16
 
     def test_set_icon_state_passed(self, config_panel: ConfigPanel) -> None:
-        config_panel._set_icon_state(
-            config_panel._asr_status_icon, passed=True, tooltip=""
-        )
+        config_panel._set_icon_state(config_panel._asr_status_icon, passed=True, tooltip="")
         pixmap = config_panel._asr_status_icon.pixmap()
         assert pixmap is not None
         assert not pixmap.isNull()
@@ -154,18 +152,14 @@ class TestValidationScheduling:
         assert asr_pixmap is not None
         assert "ASR 模型不存在" in config_panel._asr_status_icon.toolTip()
 
-    def test_do_validation_bails_when_config_none(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_do_validation_bails_when_config_none(self, config_panel: ConfigPanel) -> None:
         results: list[bool] = []
         config_panel.validation_changed.connect(lambda v: results.append(v))
         with patch.object(config_panel, "_collect_config", return_value=None):
             config_panel._do_validation()
             assert results == []
 
-    def test_do_validation_no_video_passing(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_do_validation_no_video_passing(self, config_panel: ConfigPanel) -> None:
         """无视频时调用 validate_config_only 并正确处理通过结果。"""
         results: list[bool] = []
         config_panel.validation_changed.connect(lambda v: results.append(v))
@@ -177,9 +171,7 @@ class TestValidationScheduling:
             config_panel._do_validation()
         assert results == [True]
 
-    def test_do_validation_no_video_failing(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_do_validation_no_video_failing(self, config_panel: ConfigPanel) -> None:
         """无视频时调用 validate_config_only 并正确处理失败结果。"""
         results: list[bool] = []
         config_panel.validation_changed.connect(lambda v: results.append(v))
@@ -192,9 +184,7 @@ class TestValidationScheduling:
             config_panel._do_validation()
         assert results == [False]
 
-    def test_do_validation_no_video_updates_summary(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_do_validation_no_video_updates_summary(self, config_panel: ConfigPanel) -> None:
         """无视频校验失败时汇总标签正确更新。"""
         config_panel._video_path = None
         err = ValidationError("内存不足", stage="memory")
@@ -220,9 +210,7 @@ class TestValidationScheduling:
 class TestButtonLinkage:
     """翻译按钮联动逻辑 (AC: #5)。"""
 
-    def test_button_disabled_when_validation_fails(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_disabled_when_validation_fails(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._validation_passed = False
         main_window._on_validation_changed(False)
@@ -235,16 +223,12 @@ class TestButtonLinkage:
         main_window._on_validation_changed(True)
         assert main_window._translate_btn.isEnabled() is True
 
-    def test_button_disabled_when_no_video_even_if_valid(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_disabled_when_no_video_even_if_valid(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = None
         main_window._on_validation_changed(True)
         assert main_window._translate_btn.isEnabled() is False
 
-    def test_button_disabled_during_translation(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_button_disabled_during_translation(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = Path("/test/video.mp4")
         main_window._translating = True
         main_window._on_validation_changed(True)
@@ -286,17 +270,14 @@ class TestValidationFailureDialog:
         main_window._translate_btn.setEnabled(True)
         err = ValidationError("fail", stage="memory", suggestion="close apps")
         with (
-            patch("src.gui.main_window.validate_all",
-                  return_value=ValidationResult([err])),
+            patch("src.gui.main_window.validate_all", return_value=ValidationResult([err])),
             patch("src.gui.main_window.QMessageBox.warning") as mock_warn,
         ):
             main_window._translate_btn.click()
             mock_warn.assert_called_once()
         assert main_window._translate_btn.text() == "开始翻译"
 
-    def test_translate_clicked_skips_when_no_video(
-        self, main_window: MainWindow
-    ) -> None:
+    def test_translate_clicked_skips_when_no_video(self, main_window: MainWindow) -> None:
         main_window._video_drop_area._video_path = None
         main_window._translate_btn.setEnabled(True)
         with patch("src.gui.main_window.validate_all") as mock_validate:
@@ -312,9 +293,7 @@ class TestValidationFailureDialog:
 class TestDebounce:
     """防抖：快速多次变化只触发一次校验 (AC: #3)。"""
 
-    def test_rapid_changes_only_trigger_once(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_rapid_changes_only_trigger_once(self, config_panel: ConfigPanel) -> None:
         with patch.object(config_panel, "_do_validation") as mock_do:
             # 快速连续触发多次
             config_panel._schedule_validation()
@@ -324,9 +303,7 @@ class TestDebounce:
             config_panel._validation_timer.timeout.emit()
             mock_do.assert_called_once()
 
-    def test_on_config_changed_triggers_validation(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_on_config_changed_triggers_validation(self, config_panel: ConfigPanel) -> None:
         with patch.object(config_panel, "_schedule_validation") as mock_schedule:
             config_panel._on_config_changed()
             mock_schedule.assert_called_once()
@@ -343,9 +320,7 @@ class TestBuildTooltip:
     def test_empty_tooltip_when_no_errors(self, config_panel: ConfigPanel) -> None:
         assert config_panel._build_tooltip([]) == ""
 
-    def test_tooltip_includes_message_and_suggestion(
-        self, config_panel: ConfigPanel
-    ) -> None:
+    def test_tooltip_includes_message_and_suggestion(self, config_panel: ConfigPanel) -> None:
         errors = [
             ValidationError("未配置", stage="asr", suggestion="请配置"),
         ]
